@@ -3,23 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <title>Café Dolbeau — Ajouter des cafés</title>
+    <style>
+        .felicitations {
+            display: inline-block;
+            font-weight: 800;
+            color: #7130a0;
+        }
+        @supports (background-clip: text) or (-webkit-background-clip: text) {
+            .felicitations {
+                background: linear-gradient(90deg, #c62828, #ad4800, #806600, #20732b, #1565c0, #7130a0);
+                background-clip: text;
+                -webkit-background-clip: text;
+                color: transparent;
+            }
+        }
+        @media (forced-colors: active) {
+            .felicitations {
+                background: none;
+                color: CanvasText;
+            }
+        }
+    </style>
 </head>
 <body>
     <h1>Ajouter des cafés — {{ client.nom_complet }}</h1>
     <p>Courriel : {{ client.courriel|default:"—" }} · Téléphone : {{ client.telephone|default:"—" }}</p>
     <p>Total de cafés achetés : {{ client.nombre_cafes_achetes }}</p>
+    <p>Total de cafés prépayés : {{ client.nombre_cafes_prepayes }}</p>
     {% for message in messages %}
-        <p role="status">{{ message }}</p>
+        <p role="status" class="{{ message.tags }}">{{ message }}</p>
     {% endfor %}
+    <h2>Ajouter des cafés achetés</h2>
+    <p>Chaque 11e café est gratuit et ne consomme aucun café prépayé. Le compteur inclut les cafés gratuits.</p>
+    <p>Les cafés prépayés disponibles sont utilisés automatiquement, jusqu’à concurrence de la quantité commandée.</p>
     <form method="post" action="{% url 'ajouter_cafes' client.pk %}">
         {% csrf_token %}
+        <input type="hidden" name="type_transaction" value="achat">
         {{ form.as_p }}
         <button type="submit">Enregistrer la transaction</button>
+    </form>
+    <h2>Ajouter des cafés prépayés</h2>
+    <form method="post" action="{% url 'ajouter_cafes' client.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="type_transaction" value="prepaye">
+        {{ form_prepaye.as_p }}
+        <button type="submit">Ajouter les cafés prépayés</button>
     </form>
     <h2>Les 50 dernières transactions</h2>
     <ul>
         {% for transaction in transactions %}
-            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} café(s)</li>
+            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}</li>
         {% empty %}
             <li>Aucune transaction enregistrée.</li>
         {% endfor %}

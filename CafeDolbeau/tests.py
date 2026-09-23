@@ -7,6 +7,135 @@ from unittest.mock import patch
 
 
 class TransactionCafeTests(TestCase):
+    def test_gratuite_et_separation_des_transactions(self):
+        for total, quantite, gratuits in (
+            (9, 1, 0), (10, 1, 1), (10, 3, 1), (11, 1, 0),
+            (21, 1, 1), (0, 22, 2), (10, 23, 3),
+        ):
+            with self.subTest(total=total, quantite=quantite):
+                Client.objects.filter(pk=self.personne.pk).update(
+                    nombre_cafes_achetes=total, nombre_cafes_prepayes=50
+                )
+                transactions = ajouter_cafes(self.personne, quantite)
+                self.personne.refresh_from_db()
+                self.assertEqual(self.personne.nombre_cafes_achetes, total + quantite)
+                self.assertEqual(self.personne.nombre_cafes_prepayes, 50 - quantite + gratuits)
+                self.assertEqual(sum(t.quantite for t in transactions), quantite)
+                self.assertEqual(sum(t.quantite for t in transactions
+                                     if t.type_transaction == TransactionCafe.Type.GRATUIT), gratuits)
+                self.assertTrue(all(t.quantite > 0 and t.pk for t in transactions))
+
+    def test_message_gratuit_et_solde_insuffisant(self):
+        Client.objects.filter(pk=self.personne.pk).update(
+            nombre_cafes_achetes=10, nombre_cafes_prepayes=1
+        )
+        response = self.client.post(self.url, {"quantite": 4}, follow=True)
+        self.assertContains(response, "Fecilication un café gratuit est accordé")
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 14)
+        self.assertEqual(TransactionCafe.objects.count(), 2)
+        self.client.get(self.url)
+        self.assertEqual(TransactionCafe.objects.count(), 2)
+
+    def test_recharge_ne_declenche_pas_la_gratuite(self):
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=10)
+        transactions = ajouter_cafes(self.personne, 22, TransactionCafe.Type.PREPAYE)
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_achetes, 10)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 22)
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].type_transaction, TransactionCafe.Type.PREPAYE)
+
+    def test_echec_ligne_gratuite_annule_toute_la_commande(self):
+        Client.objects.filter(pk=self.personne.pk).update(
+            nombre_cafes_achetes=10, nombre_cafes_prepayes=5
+        )
+        original_save = TransactionCafe.save
+
+        def sauvegarder(instance, *args, **kwargs):
+            if instance.type_transaction == TransactionCafe.Type.GRATUIT:
+                raise RuntimeError("échec gratuit")
+            return original_save(instance, *args, **kwargs)
+
+        with patch.object(TransactionCafe, "save", sauvegarder):
+            with self.assertRaises(RuntimeError):
+                ajouter_cafes(self.personne, 3)
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_achetes, 10)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 5)
+        self.assertEqual(TransactionCafe.objects.count(), 0)
+
+    def test_ajout_prepaye_puis_utilisation(self):
+        response = self.client.post(self.url, {
+            "quantite": 5, "type_transaction": "prepaye",
+        }, follow=True)
+        self.assertRedirects(response, self.url)
+        self.assertContains(response, "Total de cafés prépayés : 5")
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_achetes, 7)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 5)
+        ajout = TransactionCafe.objects.get()
+        self.assertEqual(ajout.type_transaction, TransactionCafe.Type.PREPAYE)
+        self.assertEqual(ajout.quantite, 5)
+        self.client.get(self.url)
+        self.assertEqual(TransactionCafe.objects.count(), 1)
+        self.client.post(self.url, {"quantite": 2, "type_transaction": "achat"})
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_achetes, 9)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 3)
+
+    def test_commande_utilise_les_prepayes_disponibles(self):
+        for solde, reste in ((0, 0), (2, 0), (3, 0), (5, 2)):
+            with self.subTest(solde=solde):
+                Client.objects.filter(pk=self.personne.pk).update(
+                    nombre_cafes_prepayes=solde, nombre_cafes_achetes=7
+                )
+                # Le service doit utiliser les valeurs en base, pas l'objet en mémoire.
+                ajout = ajouter_cafes(self.personne, 3)[0]
+                self.personne.refresh_from_db()
+                self.assertEqual(self.personne.nombre_cafes_achetes, 10)
+                self.assertEqual(self.personne.nombre_cafes_prepayes, reste)
+                self.assertEqual(ajout.quantite, 3)
+                self.assertEqual(ajout.type_transaction, TransactionCafe.Type.ACHAT)
+
+    def test_commandes_successives_epuisent_le_solde(self):
+        ajouter_cafes(self.personne, 5, TransactionCafe.Type.PREPAYE)
+        ajouter_cafes(self.personne, 3)
+        ajouter_cafes(self.personne, 4)
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_achetes, 14)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+
+    def test_prepaye_invalide_et_erreurs_sur_le_bon_formulaire(self):
+        for valeur in ("", "0", "-2", "1.5", "abc"):
+            response = self.client.post(self.url, {
+                "quantite": valeur, "type_transaction": "prepaye",
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.context["form_prepaye"].errors)
+            self.assertFalse(response.context["form"].is_bound)
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+        self.assertEqual(TransactionCafe.objects.count(), 0)
+
+    def test_type_invalide_refuse(self):
+        from django.core.exceptions import ValidationError
+
+        response = self.client.post(self.url, {"quantite": 2, "type_transaction": "inconnu"})
+        self.assertEqual(response.status_code, 400)
+        with self.assertRaises(ValidationError):
+            ajouter_cafes(self.personne, 2, "inconnu")
+        self.assertEqual(TransactionCafe.objects.count(), 0)
+
+    def test_echec_prepaye_annule_le_compteur(self):
+        with patch.object(TransactionCafe, "save", side_effect=RuntimeError("échec")):
+            with self.assertRaises(RuntimeError):
+                ajouter_cafes(self.personne, 2, TransactionCafe.Type.PREPAYE)
+        self.personne.refresh_from_db()
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+        self.assertEqual(TransactionCafe.objects.count(), 0)
+
     def setUp(self):
         self.personne = Client.objects.create(
             nom_complet="Camille", telephone="418 555-1234", nombre_cafes_achetes=7
@@ -48,11 +177,13 @@ class TransactionCafeTests(TestCase):
         self.assertEqual(TransactionCafe.objects.count(), 0)
 
     def test_echec_transaction_annule_le_compteur(self):
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_prepayes=5)
         with patch.object(TransactionCafe, "save", side_effect=RuntimeError("échec")):
             with self.assertRaises(RuntimeError):
                 ajouter_cafes(self.personne, 2)
         self.personne.refresh_from_db()
         self.assertEqual(self.personne.nombre_cafes_achetes, 7)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 5)
         self.assertEqual(TransactionCafe.objects.count(), 0)
 
     def test_client_inexistant(self):

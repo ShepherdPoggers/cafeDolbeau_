@@ -28,14 +28,24 @@ class Client(models.Model):
         return self.nom_complet
 
 
-    """Permet d'enregistrer l'achat de cafés par un client et de mettre"""
+class TransactionCafe(models.Model):
+    """Historique des ajouts de cafés achetés ou prépayés."""
+
+    class Type(models.TextChoices):
+        ACHAT = "achat", "Cafés achetés"
+        PREPAYE = "prepaye", "Cafés prépayés"
+        GRATUIT = "gratuit", "Cafés gratuits"
+
+    type_transaction = models.CharField(
+        "type de transaction", max_length=10, choices=Type.choices, default=Type.ACHAT
+    )
     client = models.ForeignKey(
         Client, on_delete=models.PROTECT, related_name="transactions_cafe"
     )
     quantite = models.PositiveIntegerField("quantité", validators=[MinValueValidator(1)])
     date_creation = models.DateTimeField("date", auto_now_add=True)
 
-    class Meta:class TransactionCafe(models.Model):
+    class Meta:
 
         ordering = ["-date_creation", "-pk"]
         verbose_name = "transaction de cafés"
