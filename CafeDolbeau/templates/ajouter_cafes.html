@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Café Dolbeau — Ajouter des cafés</title>
+</head>
+<body>
+    <h1>Ajouter des cafés — {{ client.nom_complet }}</h1>
+    <p>Courriel : {{ client.courriel|default:"—" }} · Téléphone : {{ client.telephone|default:"—" }}</p>
+    <p>Total de cafés achetés : {{ client.nombre_cafes_achetes }}</p>
+    {% for message in messages %}
+        <p role="status">{{ message }}</p>
+    {% endfor %}
+    <form method="post" action="{% url 'ajouter_cafes' client.pk %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Enregistrer la transaction</button>
+    </form>
+    <h2>Les 50 dernières transactions</h2>
+    <ul>
+        {% for transaction in transactions %}
+            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} café(s)</li>
+        {% empty %}
+            <li>Aucune transaction enregistrée.</li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'accueil' %}">Retour à l’accueil</a>
+</body>
+</html>

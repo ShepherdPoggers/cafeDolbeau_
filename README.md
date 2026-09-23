@@ -22,7 +22,22 @@ Pour accéder à l’administration `/admin/`, créer un compte avec :
 python manage.py createsuperuser
 ```
 
-## Structure
+## Lancement dans VS Code
+
+Avec les extensions **Python** et **Python Debugger** de Microsoft installées,
+ouvrir `manage.py` et cliquer sur le bouton ▶ **Run Python File** en haut à droite.
+Sans argument, `manage.py` démarre le serveur de développement.
+Le site est accessible à http://127.0.0.1:8000/.
+
+Pour déboguer, appuyer sur **F5** avec la configuration
+**Café Dolbeau : démarrer Django**. Arrêter le serveur avec **Ctrl+C** dans le
+terminal, ou **Shift+F5** pendant le débogage.
+
+Le projet utilise l'environnement `.venv`. Si VS Code a déjà sélectionné un autre
+interpréteur, exécuter **Python: Select Interpreter** dans la palette de commandes
+et choisir `.venv/bin/python`.
+
+## Structure du projet
 
 - `manage.py` : commandes Django.
 - `config/` : paramètres, routes et points d’entrée ASGI/WSGI.

@@ -15,7 +15,9 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
-    execute_from_command_line(sys.argv)
+    # Allow VS Code's Run Python File button to start the development server.
+    args = sys.argv if len(sys.argv) > 1 else [sys.argv[0], 'runserver']
+    execute_from_command_line(args)
 
 
 if __name__ == '__main__':

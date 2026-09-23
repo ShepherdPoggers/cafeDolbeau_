@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Café Dolbeau — Accueil</title>
+</head>
+<body>
+    <h1>Bienvenue au Café Dolbeau</h1>
+    <p>Découvrez notre programme de fidélité.</p>
+    {% for message in messages %}
+        <p role="status">{{ message }}</p>
+    {% endfor %}
+
+    <section aria-labelledby="titre-recherche">
+        <h2 id="titre-recherche">Rechercher un client</h2>
+        <form method="get" action="{% url 'accueil' %}" role="search">
+            <label for="recherche">Nom, téléphone ou courriel</label>
+            <input type="search" id="recherche" name="q" value="{{ recherche }}"
+                   placeholder="Nom, téléphone ou courriel">
+            <button type="submit">Rechercher</button>
+            <a href="{% url 'accueil' %}">Effacer la recherche</a>
+        </form>
+
+        {% if recherche %}
+            <h3>Résultats pour « {{ recherche }} »</h3>
+            {% if resultats %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Nom complet</th>
+                            <th scope="col">Courriel</th>
+                            <th scope="col">Téléphone</th>
+                            <th scope="col">Cafés achetés</th>
+                            <th scope="col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in resultats %}
+                            <tr>
+                                <td>{{ client.nom_complet }}</td>
+                                <td>{{ client.courriel|default:"—" }}</td>
+                                <td>{{ client.telephone|default:"—" }}</td>
+                                <td>{{ client.nombre_cafes_achetes }}</td>
+                                <td>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <form method="get" action="{% url 'modifier_client' client.pk %}">
+                                        <button type="submit" aria-label="Modifier {{ client.nom_complet }}">Modifier</button>
+                                    </form>
+                                    <form method="get" action="{% url 'ajouter_cafes' client.pk %}">
+                                        <button type="submit" aria-label="Ajouter des cafés pour {{ client.nom_complet }}">Ajouter des cafés</button>
+                                    </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>Aucun client trouvé.</p>
+            {% endif %}
+        {% endif %}
+    </section>
+
+    <h2>Ajouter un client</h2>
+    <p>Renseignez au moins un moyen de contact : courriel ou téléphone.</p>
+    <form method="post" action="{% url 'accueil' %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Ajouter le client</button>
+    </form>
+
+</body>
+</html>
