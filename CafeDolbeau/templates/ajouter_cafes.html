@@ -1,62 +1,67 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
     <title>Café Dolbeau — Ajouter des cafés</title>
-    <style>
-        .felicitations {
-            display: inline-block;
-            font-weight: 800;
-            color: #7130a0;
-        }
-        @supports (background-clip: text) or (-webkit-background-clip: text) {
-            .felicitations {
-                background: linear-gradient(90deg, #c62828, #ad4800, #806600, #20732b, #1565c0, #7130a0);
-                background-clip: text;
-                -webkit-background-clip: text;
-                color: transparent;
-            }
-        }
-        @media (forced-colors: active) {
-            .felicitations {
-                background: none;
-                color: CanvasText;
-            }
-        }
-    </style>
+    <script src="{% static 'CafeDolbeau/cafes.js' %}" defer></script>
 </head>
-<body>
+<body class="cafe-page">
+<header class="site-banner">
+    <div class="site-banner-inner">
+        <a class="site-name" href="{% url 'accueil' %}">Café Dolbeau</a>
+        <form class="admin-access" method="get" action="{% url 'admin:index' %}">
+            <div class="erreurs-cafes" role="alert"></div>
+        <button type="submit">Administration</button>
+        </form>
+    </div>
+</header>
+<div class="cafe-layout">
+    <form class="back-home" method="get" action="{% url 'accueil' %}">
+        <button type="submit">Retour à l’accueil</button>
+    </form>
+<main class="cafe-content">
     <h1>Ajouter des cafés — {{ client.nom_complet }}</h1>
     <p>Courriel : {{ client.courriel|default:"—" }} · Téléphone : {{ client.telephone|default:"—" }}</p>
+    <div id="compteurs-cafes" aria-live="polite">
     <p>Total de cafés achetés : {{ client.nombre_cafes_achetes }}</p>
     <p>Total de cafés prépayés : {{ client.nombre_cafes_prepayes }}</p>
+    </div>
+    <div id="messages-cafes" role="region" aria-label="Messages de transaction" aria-live="polite">
     {% for message in messages %}
         <p role="status" class="{{ message.tags }}">{{ message }}</p>
     {% endfor %}
+    </div>
     <h2>Ajouter des cafés achetés</h2>
-    <p>Chaque 11e café est gratuit et ne consomme aucun café prépayé. Le compteur inclut les cafés gratuits.</p>
-    <p>Les cafés prépayés disponibles sont utilisés automatiquement, jusqu’à concurrence de la quantité commandée.</p>
-    <form method="post" action="{% url 'ajouter_cafes' client.pk %}">
+    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
         {% csrf_token %}
         <input type="hidden" name="type_transaction" value="achat">
         {{ form.as_p }}
+        <div class="erreurs-cafes" role="alert"></div>
         <button type="submit">Enregistrer la transaction</button>
     </form>
-    <h2>Ajouter des cafés prépayés</h2>
-    <form method="post" action="{% url 'ajouter_cafes' client.pk %}">
+    <h2>Acheter des cartes de cafés</h2>
+    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
         {% csrf_token %}
         <input type="hidden" name="type_transaction" value="prepaye">
         {{ form_prepaye.as_p }}
-        <button type="submit">Ajouter les cafés prépayés</button>
+        <div class="erreurs-cafes" role="alert"></div>
+        <button type="submit">Acheter les cartes</button>
     </form>
-    <h2>Les 50 dernières transactions</h2>
-    <ul>
-        {% for transaction in transactions %}
-            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}</li>
-        {% empty %}
-            <li>Aucune transaction enregistrée.</li>
-        {% endfor %}
-    </ul>
-    <a href="{% url 'accueil' %}">Retour à l’accueil</a>
+    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="type_transaction" value="utilise">
+        {{ form_utilisation.as_p }}
+        <div class="erreurs-cafes" role="alert"></div>
+        <button type="submit">Utiliser les cafés prépayés</button>
+    </form>
+    <h2 id="titre-transactions">Transactions récentes</h2>
+    <div id="transactions-cafes" class="transactions-scroll" role="region" aria-labelledby="titre-transactions" tabindex="0">
+    {% include "transactions_cafe.html" %}
+    </div>
+</main>
+</div>
 </body>
 </html>

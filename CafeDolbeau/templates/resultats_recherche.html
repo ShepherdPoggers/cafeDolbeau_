@@ -1,0 +1,32 @@
+<table>
+    <thead>
+        <tr>
+            <th scope="col">Nom complet</th>
+            <th scope="col">Courriel</th>
+            <th scope="col">Téléphone</th>
+            <th scope="col">Cafés achetés</th>
+            <th scope="col">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for client in resultats %}
+            <tr>
+                <td><span class="cell-text" title="{{ client.nom_complet }}">{{ client.nom_complet }}</span></td>
+                <td><span class="cell-text" title="{{ client.courriel|default:'—' }}">{{ client.courriel|default:"—" }}</span></td>
+                <td><span class="cell-text" title="{{ client.telephone|default:'—' }}">{{ client.telephone|default:"—" }}</span></td>
+                <td><span class="cell-text" title="{{ client.nombre_cafes_achetes }}">{{ client.nombre_cafes_achetes }}</span></td>
+                <td>
+                    <div class="row-actions">
+                    <form method="get" action="{% url 'ajouter_cafes' client.pk %}">
+                        <button type="submit" aria-label="Ajouter des cafés pour {{ client.nom_complet }}">Ajouter des cafés</button>
+                    </form>
+                    </div>
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="5">{% if recherche %}Aucun client trouvé.{% else %}Aucun client enregistré.{% endif %}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -2,6 +2,16 @@
 
 Base de projet Django 5.2, avec Python 3.12 et SQLite pour le développement local.
 
+## Cartes de cafés
+
+- Le formulaire d’achat de cartes demande un nombre de cartes, chacune contenant 11 cafés, gratuité incluse.
+- Chaque carte ajoute 11 au total de cafés achetés et 11 au solde prépayé.
+- Le bouton « Utiliser les cafés prépayés » consomme d’abord le solde sans augmenter le total acheté. La portion dépassant le solde est comptée hors carte, avec la règle du 11e café gratuit.
+- L’enregistrement dans « Ajouter des cafés achetés » compte tous les cafés hors carte et conserve le solde prépayé intact, avec la même règle de gratuité.
+- L’historique distingue les prépaiements, leur consommation, les achats hors carte et les cafés gratuits.
+
+Les anciens compteurs et transactions sont conservés : ce changement ne recalcule pas les opérations passées.
+
 ## Installation
 
 ```bash

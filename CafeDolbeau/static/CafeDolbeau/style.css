@@ -1,0 +1,122 @@
+/* Style commun : pages du café et connexion à l'administration. */
+.cafe-page {
+    margin: 0;
+    background: #f4f5f7;
+    color: #273142;
+    font: 16px/1.6 system-ui, sans-serif;
+}
+.cafe-page * { box-sizing: border-box; }
+.cafe-layout { position: relative; display: flow-root; }
+.cafe-page .back-home { position: absolute; top: 24px; left: max(16px, calc(50% - 700px)); margin: 0; }
+@media (max-width: 1400px) {
+    .cafe-page .back-home { position: static; margin: 16px 16px 0; }
+}
+.cafe-content {
+    max-width: 1000px;
+    margin: 24px auto;
+    padding: 24px;
+    background: #fff;
+    border: 1px solid #e0e4ea;
+    border-radius: 12px;
+}
+.cafe-page h1 { margin: 0 0 16px; font-size: 30px; line-height: 1.25; }
+.cafe-page h2 { margin: 20px 0 12px; padding-top: 16px; border-top: 1px solid #e0e4ea; font-size: 22px; }
+.cafe-page #titre-recherche { margin-top: 0; padding-top: 0; border-top: 0; }
+.cafe-page h3 { font-size: 18px; }
+.cafe-page p { margin: 0 0 12px; }
+.cafe-page a { color: #305b96; text-underline-offset: 3px; }
+.cafe-page form { margin-bottom: 12px; }
+.site-banner { background: #305b96; }
+.site-banner-inner {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.cafe-page .site-name { color: #fff; font-size: 24px; font-weight: 700; text-decoration: none; }
+.cafe-page .admin-access { margin: 0 0 0 auto; }
+.admin-access button { background: #fff; color: #305b96; }
+.admin-access button:hover { background: #edf1f6; }
+.cafe-page label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+.cafe-page input:not([type=hidden]):not([type=submit]) {
+    display: block;
+    width: 100%;
+    max-width: 480px;
+    padding: 10px 12px;
+    border: 1px solid #aeb8c5;
+    border-radius: 6px;
+    background: #fff;
+    color: #273142;
+    font: inherit;
+}
+.cafe-page input[type=search] { margin-bottom: 14px; }
+.search-field { position: relative; max-width: 480px; margin-bottom: 14px; }
+.cafe-page .search-field input { padding-right: 48px; margin-bottom: 0; }
+.search-field input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.cafe-page #effacer-recherche { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 40px; height: 40px; padding: 0; background: transparent; color: #526174; font-size: 26px; line-height: 1; }
+.cafe-page #effacer-recherche:hover { background: #edf1f6; color: #273142; }
+.cafe-page button, .login input[type=submit] {
+    padding: 10px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #305b96;
+    color: #fff;
+    font: 600 14px/1.5 system-ui, sans-serif;
+    cursor: pointer;
+}
+.cafe-page button:hover, .login input[type=submit]:hover { background: #244675; }
+.cafe-page button + a { display: inline-block; margin: 8px 0 8px 12px; }
+.cafe-page :focus-visible, .login :focus-visible { outline: 3px solid #b16a16; outline-offset: 3px; }
+.table-scroll { overflow-x: auto; margin-block: 10px; }
+#resultats-recherche { height: 360px; overflow: auto; border: 1px solid #e0e4ea; border-radius: 6px; }
+#resultats-recherche th { position: sticky; top: 0; z-index: 1; }
+#resultats-recherche { scrollbar-gutter: stable; }
+#resultats-recherche table { table-layout: fixed; min-width: 720px; }
+#resultats-recherche th:last-child { width: 160px; }
+.cafe-page table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cafe-page th, .cafe-page td { padding: 8px 6px; text-align: left; border-bottom: 1px solid #e0e4ea; }
+.cafe-page th { background: #f4f5f7; font-weight: 600; }
+.cafe-page td { overflow-wrap: anywhere; }
+.cell-text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cafe-page tbody tr:hover { background: #fafbfc; }
+.row-actions { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; }
+.row-actions form { margin: 0; flex-shrink: 0; }
+.row-actions button { white-space: nowrap; padding: 8px 10px; }
+.cafe-page [role=status] { padding: 12px 16px; background: #edf5ef; color: #285338; border-left: 3px solid #568063; border-radius: 4px; }
+.cafe-page #recherche-status { margin: 0; padding: 0; border: 0; background: transparent; color: #526174; font-size: 14px; line-height: 1.5; }
+.cafe-page #recherche-status:empty { display: none; }
+.cafe-page .felicitations { font-weight: 700; color: #593880; background: #f3eff8; border-color: #80639d; }
+#messages-cafes { position: fixed; top: calc(var(--banner-height, 80px) + 12px); right: 16px; z-index: 1000; width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - var(--banner-height, 80px) - 28px); overflow-y: auto; pointer-events: none; }
+#messages-cafes p { margin: 0 0 8px; box-shadow: 0 4px 18px #0002; pointer-events: auto; }
+#messages-cafes p:last-child { margin-bottom: 0; }
+.cafe-page .errorlist { color: #a12c35; }
+.erreurs-cafes { color: #a12c35; }
+.erreurs-cafes:not(:empty) { margin-bottom: 10px; }
+.cafe-page button:disabled { opacity: .6; cursor: wait; }
+.cafe-page ul:not(.errorlist) { padding-left: 22px; }
+.cafe-page li { margin-bottom: 8px; }
+.transactions-scroll { height: 360px; overflow: auto; scrollbar-gutter: stable; border: 1px solid #e0e4ea; border-radius: 6px; }
+.cafe-page .transactions-scroll ul { list-style: none; margin: 0; padding: 0; }
+.cafe-page .transactions-scroll li { margin: 0; padding: 10px 12px; border-bottom: 1px solid #e0e4ea; overflow-wrap: anywhere; }
+.cafe-page .transactions-scroll li:last-child { border-bottom: 0; }
+
+/* Conserve la structure native du formulaire Django. */
+body.login { background: #f4f5f7; }
+.login #container { width: min(420px, calc(100% - 32px)); min-width: 0; border: 1px solid #e0e4ea; border-radius: 12px; overflow: hidden; }
+.login #header { background: #305b96; padding: 22px 16px; }
+.login #branding h1, .login #branding h1 a { color: #fff; }
+.login #content { padding: 24px; }
+.login .form-row #id_username, .login .form-row #id_password { padding: 10px; border-radius: 6px; }
+.login .submit-row { padding: 12px 0 0; }
+.login input[type=submit] { width: 100%; }
+.login form[method=get] input[type=submit] { background: #edf1f6; color: #305b96; border-color: #cad3df; }
+.login form[method=get] input[type=submit]:hover { background: #dfe7f1; }
+@media (max-width: 640px) {
+    .cafe-content { margin: 16px; padding: 20px; }
+    .cafe-page h1 { font-size: 25px; }
+    .cafe-page h2 { font-size: 20px; }
+}

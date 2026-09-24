@@ -22,6 +22,5 @@ from CafeDolbeau import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.accueil, name="accueil"),
-    path('clients/<int:pk>/modifier/', views.modifier_client, name="modifier_client"),
     path('clients/<int:pk>/cafes/', views.ajouter_cafes_client, name="ajouter_cafes"),
 ]

@@ -1,0 +1,7 @@
+    <ul>
+        {% for transaction in transactions %}
+            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}</li>
+        {% empty %}
+            <li>Aucune transaction enregistrée.</li>
+        {% endfor %}
+    </ul>

@@ -1,0 +1,16 @@
+{% extends "admin/login.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+{% endblock %}
+
+{% block content %}
+    {{ block.super }}
+    <form method="get" action="{% url 'accueil' %}">
+        <div class="submit-row">
+            <input type="submit" value="Retour à l’accueil">
+        </div>
+    </form>
+{% endblock %}

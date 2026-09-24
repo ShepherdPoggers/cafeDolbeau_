@@ -1,64 +1,42 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
     <title>Café Dolbeau — Accueil</title>
+    <script src="{% static 'CafeDolbeau/recherche.js' %}" defer></script>
 </head>
-<body>
-    <h1>Bienvenue au Café Dolbeau</h1>
-    <p>Découvrez notre programme de fidélité.</p>
+<body class="cafe-page">
+<header class="site-banner">
+    <div class="site-banner-inner">
+        <a class="site-name" href="{% url 'accueil' %}">Café Dolbeau</a>
+        <form class="admin-access" method="get" action="{% url 'admin:index' %}">
+            <button type="submit">Administration</button>
+        </form>
+    </div>
+</header>
+<main class="cafe-content">
     {% for message in messages %}
         <p role="status">{{ message }}</p>
     {% endfor %}
 
     <section aria-labelledby="titre-recherche">
         <h2 id="titre-recherche">Rechercher un client</h2>
-        <form method="get" action="{% url 'accueil' %}" role="search">
+        <form method="get" action="{% url 'accueil' %}" role="search" id="form-recherche">
             <label for="recherche">Nom, téléphone ou courriel</label>
-            <input type="search" id="recherche" name="q" value="{{ recherche }}"
-                   placeholder="Nom, téléphone ou courriel">
-            <button type="submit">Rechercher</button>
-            <a href="{% url 'accueil' %}">Effacer la recherche</a>
+            <div class="search-field">
+                <input type="search" id="recherche" name="q" value="{{ recherche }}"
+                       placeholder="Nom, téléphone ou courriel">
+                <button type="button" id="effacer-recherche" aria-label="Effacer la recherche" title="Effacer la recherche">×</button>
+            </div>
         </form>
 
-        {% if recherche %}
-            <h3>Résultats pour « {{ recherche }} »</h3>
-            {% if resultats %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th scope="col">Nom complet</th>
-                            <th scope="col">Courriel</th>
-                            <th scope="col">Téléphone</th>
-                            <th scope="col">Cafés achetés</th>
-                            <th scope="col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for client in resultats %}
-                            <tr>
-                                <td>{{ client.nom_complet }}</td>
-                                <td>{{ client.courriel|default:"—" }}</td>
-                                <td>{{ client.telephone|default:"—" }}</td>
-                                <td>{{ client.nombre_cafes_achetes }}</td>
-                                <td>
-                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <form method="get" action="{% url 'modifier_client' client.pk %}">
-                                        <button type="submit" aria-label="Modifier {{ client.nom_complet }}">Modifier</button>
-                                    </form>
-                                    <form method="get" action="{% url 'ajouter_cafes' client.pk %}">
-                                        <button type="submit" aria-label="Ajouter des cafés pour {{ client.nom_complet }}">Ajouter des cafés</button>
-                                    </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>Aucun client trouvé.</p>
-            {% endif %}
-        {% endif %}
+        <p id="recherche-status" role="status"></p>
+        <div id="resultats-recherche" class="table-scroll" role="region" aria-label="Liste des clients" tabindex="0" aria-live="polite" aria-busy="false">
+            {% include "resultats_recherche.html" %}
+        </div>
     </section>
 
     <h2>Ajouter un client</h2>
@@ -69,5 +47,6 @@
         <button type="submit">Ajouter le client</button>
     </form>
 
+</main>
 </body>
 </html>

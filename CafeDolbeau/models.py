@@ -35,6 +35,7 @@ class TransactionCafe(models.Model):
         ACHAT = "achat", "Cafés achetés"
         PREPAYE = "prepaye", "Cafés prépayés"
         GRATUIT = "gratuit", "Cafés gratuits"
+        UTILISE = "utilise", "Cafés prépayés consommés"
 
     type_transaction = models.CharField(
         "type de transaction", max_length=10, choices=Type.choices, default=Type.ACHAT
