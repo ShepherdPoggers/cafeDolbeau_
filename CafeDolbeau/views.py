@@ -4,7 +4,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.template.loader import render_to_string
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import AchatCartesForm, AjoutCafesForm, ClientForm, UtilisationPrepayesForm
+from .forms import AchatCartesForm, AjoutCafesForm, ClientForm
 from .models import Client, TransactionCafe
 from .services import ajouter_cafes
 
@@ -45,7 +45,8 @@ def ajouter_cafes_client(request, pk):
     formulaires = {
         TransactionCafe.Type.ACHAT: AjoutCafesForm(),
         TransactionCafe.Type.PREPAYE: AchatCartesForm(auto_id="prepaye_%s"),
-        TransactionCafe.Type.UTILISE: UtilisationPrepayesForm(auto_id="utilise_%s"),
+        TransactionCafe.Type.UTILISE: AjoutCafesForm(),
+
     }
     if request.method == "POST":
         type_transaction = request.POST.get("type_transaction", TransactionCafe.Type.ACHAT)
@@ -82,6 +83,5 @@ def ajouter_cafes_client(request, pk):
         "client": client,
         "form": formulaires[TransactionCafe.Type.ACHAT],
         "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
-        "form_utilisation": formulaires[TransactionCafe.Type.UTILISE],
         "transactions": client.transactions_cafe.all()[:50],
     })

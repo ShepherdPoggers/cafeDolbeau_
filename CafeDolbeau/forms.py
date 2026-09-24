@@ -8,11 +8,6 @@ class AjoutCafesForm(forms.Form):
                                  max_value=2147483647, initial=1)
 
 
-class UtilisationPrepayesForm(AjoutCafesForm):
-    quantite = forms.IntegerField(
-        label="Nombre de cafés à consommer", min_value=1,
-        max_value=2147483647, initial=1,
-    )
 
 
 class AchatCartesForm(forms.Form):

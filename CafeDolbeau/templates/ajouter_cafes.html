@@ -37,25 +37,18 @@
     <h2>Ajouter des cafés achetés</h2>
     <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
         {% csrf_token %}
-        <input type="hidden" name="type_transaction" value="achat">
         {{ form.as_p }}
         <div class="erreurs-cafes" role="alert"></div>
-        <button type="submit">Enregistrer la transaction</button>
+        <button name="type_transaction" type="submit" value="achat">Acheter café</button>
+        <button name="type_transaction" type="submit" value="utilise">Utiliser les cafés prépayés</button>
+
     </form>
     <h2>Acheter des cartes de cafés</h2>
     <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
         {% csrf_token %}
-        <input type="hidden" name="type_transaction" value="prepaye">
         {{ form_prepaye.as_p }}
         <div class="erreurs-cafes" role="alert"></div>
-        <button type="submit">Acheter les cartes</button>
-    </form>
-    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="type_transaction" value="utilise">
-        {{ form_utilisation.as_p }}
-        <div class="erreurs-cafes" role="alert"></div>
-        <button type="submit">Utiliser les cafés prépayés</button>
+        <button name="type_transaction" type="submit" value="prepaye">Acheter les cartes</button>
     </form>
     <h2 id="titre-transactions">Transactions récentes</h2>
     <div id="transactions-cafes" class="transactions-scroll" role="region" aria-labelledby="titre-transactions" tabindex="0">
