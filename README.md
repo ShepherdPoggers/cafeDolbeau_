@@ -114,6 +114,4 @@ python src/manage.py test CafeDolbeau
 | Les anciens clients ne s’affichent plus après un déplacement du code | Vérifier que la base attendue se trouve dans `src/db.sqlite3`. |
 | Le navigateur conserve un ancien script ou style | Effectuer un rechargement forcé de la page, par exemple **Ctrl+F5**. |
 
-## Organisation
-
 
