@@ -18,14 +18,14 @@
     └── CafeDolbeau/
         ├── migrations/      # Modification de la base de donné
         ├── static/          # Javascript et CSS du site web
-        ├── templates/       # Pages HTLM
+        ├── templates/       # Pages HTML
         ├── admin.py         # Ajout de la gestion des clients dans la page admin
         ├── apps.py          # Déclaration de la config de l'app django
         ├── forms.py         # Définition des différents formulaires 
         ├── models.py        # Définiion des modèles qui seront présent dans la BD (`Client` et `TransactionCafe`)
         ├── services.py      # Traitement de la transaction coté logique
         ├── tests.py         # Tests unitaire
-        └── vies.py          # Logique de la page accueil et ajouter_cafes
+        └── views.py          # Logique de la page accueil et ajouter_cafes
 ```
 
 
@@ -33,9 +33,10 @@
 
 
 Un client est constitué de : 
+- un ID (Clé primaire)
 - nom complet 
-- un numéro de téléphone 
-- un courriel 
+- un numéro de téléphone (UNIQUE)
+- un courriel (UNIQUE)
 - le nombre de café prépayé qu'il possède 
 - le nombre total de café acheté
 - le nombre total de café gratuit
@@ -57,8 +58,8 @@ type_transaction permet de savoir quoi faire selon la bonne transaction dans la 
 
 - **ACHAT** -> Achat classique on incrément de *quantite* le nombre de café et on vérifie si un café doit etre gratuit.
 - **PREPAYE** -> Ajout de *quantite* * 10 café prépayé dans le client plus *quantite* café gratuit.
-- **GRATUTI** -> Affiche un message pour félicité le client et ajout d'un café gratuit.
-- **UTILISE** -> Utilisation de *quantite* café prépayé, on baisse le nombre total de *quantite* jusqu'à ce qu'il soit épuisé,puis on fait la même chose pour les cafés gratuits, on utilise **ACHAT** pour le reste. 
+- **GRATUIT** -> Affiche un message pour félicité le client et ajout d'un café gratuit.
+- **UTILISE** -> Utilisation de *quantite* café prépayé, on diminue le solde total de *quantite* jusqu'à ce qu'il soit épuisé,puis on fait la même chose pour les cafés gratuits, on utilise **ACHAT** pour le reste. 
 
 #### Onzième Café gratuit et cartes prépayés
 
@@ -76,12 +77,25 @@ gratuit = (total + achat) \operatorname{DIV} 10 - total\operatorname{DIV} 10
 
 ##### Explication de la logique
 
-Initialement les cafés gratuits imédiatement consommé soit le onzième, mais pour laisser de la fléxibilité aux clients nous avons migrés les cafés gratuits vers les cafés prépayé. Lorsque 10 cafés étaient achetés on ajoutait 1 au compteur prépayé. Pour ajouter de la clareté, les cafés gratuits sont maintenant enregistrés dans leur compteur à part. Le café gratuit n'est jamais comptabliser dans le total pour éviter un décalage et privé le client d'un café gratuit. 
+Initialement les cafés gratuits imédiatement consommé soit le onzième, mais pour laisser de la fléxibilité aux clients nous avons migrés les cafés gratuits vers les cafés prépayé. Lorsque 10 cafés étaient achetés on ajoutait 1 au compteur prépayé. Pour ajouter de la clareté, les cafés gratuits sont maintenant enregistrés dans leur compteur à part. Le café gratuit n'est jamais comptabliser dans le total pour éviter un décalage et privé le client d'un café gratuit. Les cafés gratuit ne vont jamais expirer.
 
 Au début du projet,  on ajoutait directement 11 cafés aux compteur de total et de prépayé, mais à cause du décalage mais puisque nous avons changé la méthode pour calculer les cafés gratuits cela causait un décalage. 
 Désormais, Chaque carte prépayés contiennent 10 cafés et un café gratuit, lors de l'achat d'une tel carte 10 cafés sont ajoutés au compteur total et 10 cafés sont ajoutés au compteur de café prépayés du client et un café est ajouté au compteur des cafés gratuits. 
+
+###### Tableau Explicatif
+
+| Situation | Résultat attendu |
+|---|---|
+| 9 cafés achetés, puis achat de 1 café | Total acheté : 10 ; ajout de 1 récompense |
+| Utilisation de cette récompense | Solde gratuit diminué de 1 ; total acheté inchangé |
+| Achat de 2 cartes | +20 achetés, +20 prépayés, +2 gratuits |
 
 ##### Consomation
 
 Lorsqu'un client achète un café il peut décidé d'utiliser ou non ses cafés prépayés/gratuits. Les cafés prépayés sont consomés puis les cafés gratuits. 
 Si il veut il peut décider de seuelement en utiliser un certain nombre. Cela demendera au caissier d'enregistrer une première opération puis une seconde. 
+
+### Choix Techniques
+
+Nous avons centralisé le calcul des cafés dans le fichier service.py. 
+Dans ce fichier on retrouve les fonctions `ajouter_cafes` cette fonction à comme décorateur `@transaction.atomic` qui garantit que les compteurs et l'historique sont enregistrés ensemble. Pour gérer chaque transaction et `transaction_prepayes` pour géré le cas unique de l'achat de carte prépayé. 
