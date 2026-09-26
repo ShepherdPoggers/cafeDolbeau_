@@ -28,6 +28,7 @@
     <div id="compteurs-cafes" aria-live="polite">
     <p>Total de cafés achetés : {{ client.nombre_cafes_achetes }}</p>
     <p>Total de cafés prépayés : {{ client.nombre_cafes_prepayes }}</p>
+    <p>Total de cafés gratuits : {{ client.nombre_cafes_gratuits }}</p>
     </div>
     <div id="messages-cafes" role="region" aria-label="Messages de transaction" aria-live="polite">
     {% for message in messages %}

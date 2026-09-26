@@ -7,9 +7,6 @@ class AjoutCafesForm(forms.Form):
     quantite = forms.IntegerField(label="Nombre de cafés à ajouter", min_value=1,
                                  max_value=2147483647, initial=1)
 
-
-
-
 class AchatCartesForm(forms.Form):
     quantite = forms.IntegerField(
         label="Nombre de cartes de 11 cafés", min_value=1,

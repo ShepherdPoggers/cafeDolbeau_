@@ -12,11 +12,28 @@ class Client(models.Model):
     nombre_cafes_achetes = models.PositiveIntegerField(
         "nombre de cafés achetés", default=0
     )
+    nombre_cafes_gratuits = models.PositiveIntegerField(
+        "nombre de cafés gratuits", default=0
+    )
 
     class Meta:
         verbose_name = "client"
         verbose_name_plural = "clients"
         ordering = ["nom_complet"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["telephone"],
+                condition=~models.Q(telephone=""),
+                name="client_telephone_unique_non_vide",
+                violation_error_message="Ce numéro de téléphone est déjà associé à un client.",
+            ),
+            models.UniqueConstraint(
+                fields=["courriel"],
+                condition=~models.Q(courriel=""),
+                name="client_courriel_unique_non_vide",
+                violation_error_message="Ce courriel est déjà associé à un client.",
+            ),
+        ]
 
     def clean(self):
         """Valide que le client a au moins un courriel ou un téléphone renseigné."""
@@ -32,6 +49,7 @@ class TransactionCafe(models.Model):
     """Historique des ajouts de cafés achetés ou prépayés."""
 
     class Type(models.TextChoices):
+        """Enum qui traite du type de transaction"""
         ACHAT = "achat", "Cafés achetés"
         PREPAYE = "prepaye", "Cafés prépayés"
         GRATUIT = "gratuit", "Cafés gratuits"

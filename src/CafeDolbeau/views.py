@@ -68,6 +68,7 @@ def ajouter_cafes_client(request, pk):
                 return JsonResponse({
                     "achetes": client.nombre_cafes_achetes,
                     "prepayes": client.nombre_cafes_prepayes,
+                    "gratuits": client.nombre_cafes_gratuits,
                     "messages": [
                         {"texte": str(message), "tags": message.tags}
                         for message in messages.get_messages(request)

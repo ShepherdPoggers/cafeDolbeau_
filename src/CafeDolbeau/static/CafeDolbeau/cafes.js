@@ -84,6 +84,9 @@
                         counters[0].textContent = `Total de cafés achetés : ${data.achetes}`;
                         counters[1].textContent = `Total de cafés prépayés : ${data.prepayes}`;
                     }
+                    if (counters.length >= 3) {
+                        counters[2].textContent = `Total de cafés gratuits : ${data.gratuits}`;
+                    }
                 }
 
                 const history = document.getElementById("transactions-cafes");
