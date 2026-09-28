@@ -2,15 +2,16 @@
 
 Application Django pour gérer les clients, les achats de cafés, les cartes prépayées et les cafés gratuits.
 
+## Auteurs
+
+- DESA07010400, Desbiens, Anthony
+- SHEE15060600, Shepherd, Elliot
+
 ## Documentation
 
 - [Conception du projet](docs/conception.md)
 - [Utilisation de l'IA](AI-USAGE.md)
 
-## Auteurs
-
-- DESA07010400, Desbiens, Anthony
-- SHEE15060600, Shepherd, Elliot
 
 ## Prérequis
 
