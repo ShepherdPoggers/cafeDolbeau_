@@ -23,13 +23,13 @@ def ajouter_cafes(client : Client, quantite : int, type_transaction=TransactionC
     if type_transaction == TransactionCafe.Type.PREPAYE:
         return transaction_prepaye(client, quantite)
 
-    utilises = (
-        min(client.nombre_cafes_prepayes, quantite)
+    gratuits_utilises = (
+        min(client.nombre_cafes_gratuits, quantite)
         if type_transaction == TransactionCafe.Type.UTILISE else 0
     )
-    gratuits_utilises = (
-    min(client.nombre_cafes_gratuits, quantite - utilises)
-    if type_transaction == TransactionCafe.Type.UTILISE and utilises < quantite else 0
+    utilises = (
+    min(client.nombre_cafes_prepayes, quantite - gratuits_utilises)
+    if type_transaction == TransactionCafe.Type.UTILISE and gratuits_utilises < quantite else 0
     )
   
     hors_carte = quantite - utilises - gratuits_utilises
