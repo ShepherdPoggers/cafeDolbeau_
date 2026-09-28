@@ -7,6 +7,11 @@ Application Django pour gérer les clients, les achats de cafés, les cartes pr�
 - [Conception du projet](docs/conception.md)
 - [Utilisation de l'IA](AI-USAGE.md)
 
+## Auteurs
+
+- DESA07010400, Desbiens, Anthony
+- SHEE15060600, Shepherd, Elliot
+
 ## Prérequis
 
 - Python 3.12 avec `pip` et `venv`.
@@ -118,5 +123,4 @@ python src/manage.py test CafeDolbeau
 | Le port 8000 est déjà utilisé | Lancer `python src/manage.py runserver 8001`, puis ouvrir `http://127.0.0.1:8001/`. |
 | Les anciens clients ne s’affichent plus après un déplacement du code | Vérifier que la base attendue se trouve dans `src/db.sqlite3`. |
 | Le navigateur conserve un ancien script ou style | Effectuer un rechargement forcé de la page, par exemple **Ctrl+F5**. |
-
 
