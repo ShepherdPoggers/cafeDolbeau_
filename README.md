@@ -2,6 +2,11 @@
 
 Application Django pour gérer les clients, les achats de cafés, les cartes prépayées et les cafés gratuits.
 
+## Documentation
+
+- [Conception du projet](docs/CONCEPTION.md)
+- [Utilisation de l'IA](AI-USAGE.md)
+
 ## Prérequis
 
 - Python 3.12 avec `pip` et `venv`.
