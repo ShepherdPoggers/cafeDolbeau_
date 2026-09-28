@@ -4,7 +4,7 @@ Application Django pour gérer les clients, les achats de cafés, les cartes pr�
 
 ## Documentation
 
-- [Conception du projet](docs/CONCEPTION.md)
+- [Conception du projet](docs/conception.md)
 - [Utilisation de l'IA](AI-USAGE.md)
 
 ## Prérequis
