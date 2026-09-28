@@ -77,7 +77,7 @@ Pour calculer le nombre de cafés gratuits accordés au client, l'opération sui
 - **achat** : Nombre de cafés achetés par le client lors de la transaction, excluant les cafés prépayés.
 
 ```math
-gratuit = (total + achat) \operatorname{DIV} 10 - total \operatorname{DIV} 10
+gratuit = (total + achat)\;\mathrm{DIV}\;10 - total\;\mathrm{DIV}\;10
 ```
 
 ##### Explication de la logique
