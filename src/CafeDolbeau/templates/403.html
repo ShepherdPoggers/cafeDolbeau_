@@ -1,0 +1,18 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+    <title>Café Dolbeau — Accès refusé</title>
+</head>
+<body class="cafe-page">
+{% include "en_tete.html" %}
+<main class="cafe-content">
+    <h1>Accès refusé</h1>
+    <p>Votre compte ne possède pas les permissions nécessaires pour accéder à cette page. Contactez l’administrateur si votre rôle doit être modifié.</p>
+    <a href="{% url 'accueil' %}">Retour à l’accueil</a>
+</main>
+</body>
+</html>

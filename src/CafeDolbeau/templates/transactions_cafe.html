@@ -1,6 +1,19 @@
     <ul>
         {% for transaction in transactions %}
-            <li>{{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}</li>
+            <li class="transaction-ligne{% if transaction.annulee %} transaction-annulee{% endif %}">
+                <div>
+                    {{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}
+                    <small>Employé : {{ transaction.employe.username|default:"Inconnu" }}</small>
+                    {% if transaction.annulee %}
+                    <small class="statut-annulation">Annulée le {{ transaction.annulation.date_annulation|date:"d/m/Y H:i" }} par {{ transaction.annulation.employe.username }}</small>
+                    {% else %}
+                    <small>Active</small>
+                    {% endif %}
+                </div>
+                <form method="get" action="{% url 'annuler_transaction' transaction.client_id transaction.pk %}">
+                    <button class="bouton-annuler" type="submit" aria-label="Annuler l’opération de la transaction {{ transaction.pk }}"{% if not transaction.annulation_disponible %} disabled title="Opération déjà annulée ou réservée à son auteur et aux gérants"{% endif %}>Annuler</button>
+                </form>
+            </li>
         {% empty %}
             <li>Aucune transaction enregistrée.</li>
         {% endfor %}

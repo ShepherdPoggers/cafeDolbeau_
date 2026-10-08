@@ -1,0 +1,65 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+    <title>Café Dolbeau — Annuler une opération</title>
+</head>
+<body class="cafe-page">
+{% include "en_tete.html" %}
+<main class="cafe-content">
+    <h1>Annuler une opération — {{ client.nom_complet }}</h1>
+    {% if erreurs %}<div role="alert" class="erreurs-cafes">{% for erreur in erreurs %}<p>{{ erreur }}</p>{% endfor %}</div>{% endif %}
+    {% if deja_annulee %}
+        <p>Cette opération est déjà annulée.</p>
+    {% elif confirmation %}
+        <p>Toutes les lignes ci-dessous seront annulées et resteront dans l’historique.</p>
+        <ul>
+            {% for ligne in lignes %}
+            <li>#{{ ligne.pk }} — {{ ligne.date_creation|date:"d/m/Y H:i" }} — {{ ligne.get_type_transaction_display }} : {{ ligne.quantite }} — Employé : {{ ligne.employe.username|default:"Inconnu" }}</li>
+            {% endfor %}
+        </ul>
+        <table>
+            <thead><tr><th>Solde</th><th>Avant</th><th>Après annulation</th></tr></thead>
+            <tbody>{% for solde in soldes %}<tr><td>{{ solde.libelle }}</td><td>{{ solde.avant }}</td><td>{{ solde.apres }}</td></tr>{% endfor %}</tbody>
+        </table>
+        <p>Les soldes ne descendront jamais sous zéro. Ils seront relus au moment de la confirmation.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="confirmer">
+            <input type="hidden" name="confirmation" value="{{ confirmation }}">
+            <button type="submit" class="bouton-annuler">Confirmer l’annulation de toute l’opération</button>
+        </form>
+    {% elif effets %}
+        <p>Renseignez l’effet original de chaque ligne : positif pour un crédit, négatif pour une consommation et zéro si le compteur n’a pas changé.</p>
+        <p>Ces informations seront enregistrées uniquement après confirmation de l’annulation.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="previsualiser">
+            {% for ligne in lignes_selectionnees %}<input type="hidden" name="lignes" value="{{ ligne.pk }}">{% endfor %}
+            {{ effets.management_form }}
+            {{ effets.non_form_errors }}
+            {% for form in effets %}
+            <fieldset>
+                <legend>#{{ form.ligne.pk }} — {{ form.ligne.get_type_transaction_display }} : {{ form.ligne.quantite }}</legend>
+                {{ form.as_p }}
+            </fieldset>
+            {% endfor %}
+            <button type="submit">Voir le récapitulatif</button>
+        </form>
+    {% elif selection %}
+        <p>Les anciennes transactions ne précisent pas leur auteur ni tous leurs effets. Sélectionnez les lignes appartenant à cette opération pour compléter les informations.</p>
+        <form method="post" class="selection-anciennes">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="completer">
+            {{ selection.as_p }}
+            <button type="submit">Compléter les effets de l’opération</button>
+        </form>
+    {% endif %}
+    {% if erreurs %}<p><a href="{{ request.get_full_path }}">Ouvrir à nouveau le récapitulatif</a></p>{% endif %}
+    <p>{% if origine_admin %}<a href="{% url 'admin:CafeDolbeau_transactioncafe_changelist' %}">Retour aux transactions</a>{% else %}<a href="{% url 'ajouter_cafes' client.pk %}">Retour aux cafés du client</a>{% endif %}</p>
+</main>
+</body>
+</html>

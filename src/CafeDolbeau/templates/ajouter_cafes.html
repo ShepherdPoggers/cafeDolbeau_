@@ -9,15 +9,7 @@
     <script src="{% static 'CafeDolbeau/cafes.js' %}" defer></script>
 </head>
 <body class="cafe-page">
-<header class="site-banner">
-    <div class="site-banner-inner">
-        <a class="site-name" href="{% url 'accueil' %}">Café Dolbeau</a>
-        <form class="admin-access" method="get" action="{% url 'admin:index' %}">
-            <div class="erreurs-cafes" role="alert"></div>
-        <button type="submit">Administration</button>
-        </form>
-    </div>
-</header>
+{% include "en_tete.html" %}
 <div class="cafe-layout">
     <form class="back-home" method="get" action="{% url 'accueil' %}">
         <button type="submit">Retour à l’accueil</button>

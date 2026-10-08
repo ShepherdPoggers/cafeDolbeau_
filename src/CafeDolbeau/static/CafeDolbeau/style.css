@@ -1,4 +1,4 @@
-/* Style commun : pages du café et connexion à l'administration. */
+/* Style commun : pages du café et connexion. */
 .cafe-page {
     margin: 0;
     background: #f4f5f7;
@@ -41,6 +41,12 @@
 .cafe-page .admin-access { margin: 0 0 0 auto; }
 .admin-access button { background: #fff; color: #305b96; }
 .admin-access button:hover { background: #edf1f6; }
+.site-session { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.session-user { color: #fff; font-size: 14px; }
+.cafe-page .site-session form { margin: 0; }
+.cafe-page .site-session button { background: #fff; color: #305b96; }
+.cafe-page .site-session button:hover { background: #edf1f6; }
+.connexion-content { max-width: 460px; }
 .cafe-page label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
 .cafe-page input:not([type=hidden]):not([type=submit]) {
     display: block;
@@ -103,6 +109,16 @@
 .cafe-page .transactions-scroll ul { list-style: none; margin: 0; padding: 0; }
 .cafe-page .transactions-scroll li { margin: 0; padding: 10px 12px; border-bottom: 1px solid #e0e4ea; overflow-wrap: anywhere; }
 .cafe-page .transactions-scroll li:last-child { border-bottom: 0; }
+.transaction-ligne { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.transaction-ligne small { display: block; color: #526174; }
+.cafe-page .transaction-ligne form { margin: 0; flex-shrink: 0; }
+.cafe-page .bouton-annuler { background: #b12f38; }
+.cafe-page .bouton-annuler:hover { background: #8d242c; }
+.cafe-page .bouton-annuler:disabled { background: #737c89; opacity: 1; cursor: not-allowed; }
+.transaction-annulee { background: #f4f5f7; }
+.transaction-ligne .statut-annulation { color: #8d242c; font-weight: 600; }
+.cafe-page .selection-anciennes input[type=checkbox] { display: inline-block; width: auto; margin-right: 8px; }
+.cafe-page fieldset { margin-bottom: 16px; padding: 16px; border: 1px solid #aeb8c5; border-radius: 6px; }
 
 /* Conserve la structure native du formulaire Django. */
 body.login { background: #f4f5f7; }

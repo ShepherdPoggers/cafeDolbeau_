@@ -1,6 +1,23 @@
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
+
+
+class Employe(User):
+    """Compte employé utilisant les comptes et les groupes d'authentification Django."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "employé"
+        verbose_name_plural = "employés"
+        default_permissions = ()
+        permissions = [
+            ("acces_base", "Accéder aux fonctions de base du café"),
+            ("acces_gerant", "Accéder aux fonctions de gérant du café"),
+        ]
+
 
 class Client(models.Model):
     nom_complet = models.CharField("nom complet", max_length=200)
@@ -63,6 +80,18 @@ class TransactionCafe(models.Model):
     )
     quantite = models.PositiveIntegerField("quantité", validators=[MinValueValidator(1)])
     date_creation = models.DateTimeField("date", auto_now_add=True)
+    employe = models.ForeignKey(
+        Employe, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="transactions_effectuees", verbose_name="employé",
+    )
+    operation_id = models.UUIDField("opération", null=True, blank=True, db_index=True)
+    variation_achetes = models.IntegerField(null=True, blank=True)
+    variation_prepayes = models.IntegerField(null=True, blank=True)
+    variation_gratuits = models.IntegerField(null=True, blank=True)
+
+    @property
+    def annulee(self):
+        return hasattr(self, "annulation")
 
     class Meta:
 
@@ -77,3 +106,22 @@ class TransactionCafe(models.Model):
 
     def __str__(self):
         return f"{self.client} : {self.quantite} café(s)"
+
+
+class AnnulationTransaction(models.Model):
+    transaction = models.OneToOneField(
+        TransactionCafe, on_delete=models.PROTECT, related_name="annulation",
+    )
+    date_annulation = models.DateTimeField(default=timezone.now, editable=False)
+    employe = models.ForeignKey(
+        Employe, on_delete=models.PROTECT, related_name="annulations_effectuees",
+        verbose_name="employé",
+    )
+
+    class Meta:
+        verbose_name = "annulation de transaction"
+        verbose_name_plural = "annulations de transactions"
+        ordering = ["-date_annulation", "-pk"]
+
+    def __str__(self):
+        return f"Annulation de la transaction #{self.transaction_id}"

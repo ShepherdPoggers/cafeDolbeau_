@@ -67,6 +67,10 @@
                     headers: { "X-Requested-With": "XMLHttpRequest" },
                 });
 
+                if (response.redirected) {
+                    window.location.assign(response.url);
+                    return;
+                }
                 const data = await response.json();
                 if (response.status === 400 && data.erreurs) {
                     if (errors) {

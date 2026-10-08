@@ -14,6 +14,10 @@
         url.searchParams.set("partiel", "recherche");
         try {
             const response = await fetch(url, { signal: controller.signal });
+            if (response.redirected) {
+                window.location.assign(response.url);
+                return;
+            }
             if (!response.ok) throw new Error("Recherche indisponible");
             const html = await response.text();
             if (currentVersion !== version) return;

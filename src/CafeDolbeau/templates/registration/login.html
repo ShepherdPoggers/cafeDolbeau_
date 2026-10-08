@@ -1,0 +1,32 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+    <title>Café Dolbeau — Connexion</title>
+</head>
+<body class="cafe-page">
+{% include "en_tete.html" %}
+<main class="cafe-content connexion-content">
+    <h1>Connexion</h1>
+    <p>Connectez-vous avec votre compte de barista ou de gérant.</p>
+    <form method="post" action="{% url 'connexion' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        {% if form.non_field_errors %}
+        <div role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+        <p>
+            {{ field.label_tag }}
+            {{ field }}
+            {{ field.errors }}
+        </p>
+        {% endfor %}
+        <button type="submit">Se connecter</button>
+    </form>
+</main>
+</body>
+</html>

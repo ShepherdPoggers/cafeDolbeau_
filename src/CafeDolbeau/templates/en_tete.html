@@ -1,0 +1,22 @@
+<header class="site-banner">
+    <div class="site-banner-inner">
+        <a class="site-name" href="{% url 'accueil' %}">Café Dolbeau</a>
+        {% if user.is_authenticated %}
+        <div class="site-session">
+            <span class="session-user">
+                {{ user.get_username }}
+                {% if perms.CafeDolbeau.acces_gerant %} · Gérant{% elif perms.CafeDolbeau.acces_base %} · Barista{% endif %}
+            </span>
+            {% if perms.CafeDolbeau.acces_gerant %}
+            <form class="admin-access" method="get" action="{% url 'admin:index' %}">
+                <button type="submit">Administration</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'deconnexion' %}">
+                {% csrf_token %}
+                <button type="submit">Se déconnecter</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</header>

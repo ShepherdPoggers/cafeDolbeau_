@@ -9,14 +9,7 @@
     <script src="{% static 'CafeDolbeau/recherche.js' %}" defer></script>
 </head>
 <body class="cafe-page">
-<header class="site-banner">
-    <div class="site-banner-inner">
-        <a class="site-name" href="{% url 'accueil' %}">Café Dolbeau</a>
-        <form class="admin-access" method="get" action="{% url 'admin:index' %}">
-            <button type="submit">Administration</button>
-        </form>
-    </div>
-</header>
+{% include "en_tete.html" %}
 <main class="cafe-content">
     {% for message in messages %}
         <p role="status">{{ message }}</p>
