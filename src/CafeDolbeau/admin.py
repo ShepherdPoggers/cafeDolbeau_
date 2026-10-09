@@ -4,8 +4,8 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .forms import CreationEmployeForm, ModificationEmployeForm
-from .models import AnnulationTransaction, Client, Employe, TransactionCafe
+from .forms.forms import CreationEmployeForm, ModificationEmployeForm
+from .models import AnnulationTransaction, Client, Employe, ParametresCafe, TransactionCafe
 from .permissions import PERMISSION_GERANT
 
 
@@ -56,6 +56,32 @@ class EmployeAdmin(UserAdmin):
 class ClientAdmin(admin.ModelAdmin):
     list_display = ("nom_complet", "telephone", "courriel", "nombre_cafes_achetes", "nombre_cafes_prepayes", "nombre_cafes_gratuits")
     search_fields = ("nom_complet", "telephone", "courriel")
+
+
+@admin.register(ParametresCafe)
+class ParametresCafeAdmin(admin.ModelAdmin):
+    fields = ("cafes_pour_gratuite",)
+    list_display = ("__str__", "cafes_pour_gratuite")
+    actions = None
+
+    def get_queryset(self, request):
+        ParametresCafe.charger()
+        return super().get_queryset(request)
+
+    def has_module_permission(self, request):
+        return request.user.has_perm(PERMISSION_GERANT)
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm(PERMISSION_GERANT)
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.has_perm(PERMISSION_GERANT)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class StatutAnnulationFilter(admin.SimpleListFilter):

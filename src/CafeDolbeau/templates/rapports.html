@@ -1,0 +1,77 @@
+{% load static tz %}
+{% timezone "America/Toronto" %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+    <script src="{% static 'CafeDolbeau/rapports.js' %}" defer></script>
+    <title>Café Dolbeau — Rapports</title>
+</head>
+<body class="cafe-page">
+{% include "en_tete.html" %}
+<main class="cafe-content">
+    <h1>Rapports de transactions</h1>
+    <form id="form-rapport" class="rapport-form" method="get" action="{% url 'rapports' %}">
+        {{ form.non_field_errors }}
+        <p>{{ form.precision.label_tag }}{{ form.precision }}{{ form.precision.errors }}</p>
+        <fieldset>
+            <legend>Période</legend>
+            <div class="rapport-dates">
+                <p>{{ form.date_debut.label_tag }}{{ form.date_debut }}{{ form.date_debut.errors }}</p>
+                <p>{{ form.date_fin.label_tag }}{{ form.date_fin }}{{ form.date_fin.errors }}</p>
+            </div>
+            <p id="periode-rapport" aria-live="polite"></p>
+            <p id="regle-periode">Les dates de début et de fin sont incluses.</p>
+        </fieldset>
+        <fieldset>
+            <legend>{{ form.types.label }}</legend>
+            {{ form.types.errors }}
+            {{ form.types }}
+        </fieldset>
+        <div class="rapport-actions">
+            <button type="submit">Afficher le rapport</button>
+            <button type="submit" formaction="{% url 'rapport_excel' %}">Télécharger Excel</button>
+        </div>
+    </form>
+    {% if rapport %}
+    <section aria-labelledby="titre-synthese">
+        <h2 id="titre-synthese">Rapport du {{ rapport.date_debut|date:"d/m/Y" }} au {{ rapport.date_fin|date:"d/m/Y" }}</h2>
+        <p>Quantités de cafés. Les annulations sont déduites à leur date d’annulation ; le total net peut être négatif.</p>
+        {% include "tableau_rapport.html" %}
+        <details class="rapport-totaux-details">
+        <summary>Voir les quantités enregistrées et annulées</summary>
+        {% include "detail_totaux_rapport.html" %}
+        </details>
+    </section>
+    {% if rapport.precision == "transaction" %}
+    <section aria-labelledby="titre-detail">
+        <h2 id="titre-detail">Transactions et annulations</h2>
+        <div class="table-scroll">
+            <table>
+                <caption>{{ page_evenements.paginator.count }} événement{{ page_evenements.paginator.count|pluralize }} — dates et heures de Toronto</caption>
+                <thead><tr><th scope="col">Date</th><th scope="col">Transaction</th><th scope="col">Type</th><th scope="col">Événement</th><th scope="col">Client</th><th scope="col">Employé</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th></tr></thead>
+                <tbody>{% for evenement in page_evenements %}<tr>
+                    <td>{{ evenement.date|date:"d/m/Y H:i:s" }}</td><td>#{{ evenement.transaction_id }}</td>
+                    <td>{{ evenement.type_transaction }}</td><td>{{ evenement.nature }}</td>
+                    <td>{{ evenement.client }}</td><td>{{ evenement.employe }}</td>
+                    <td>{{ evenement.enregistrees }}</td><td>{{ evenement.annulees }}</td><td>{{ evenement.net }}</td>
+                </tr>{% empty %}<tr><td colspan="9">Aucune transaction ni annulation pour cette sélection.</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        {% if page_evenements.has_other_pages %}
+        <nav class="rapport-pagination" aria-label="Pages des événements">
+            {% if page_evenements.has_previous %}<a href="?{{ filtres_pagination }}&amp;page={{ page_evenements.previous_page_number }}">Page précédente</a>{% endif %}
+            <span>Page {{ page_evenements.number }} sur {{ page_evenements.paginator.num_pages }}</span>
+            {% if page_evenements.has_next %}<a href="?{{ filtres_pagination }}&amp;page={{ page_evenements.next_page_number }}">Page suivante</a>{% endif %}
+        </nav>
+        {% endif %}
+    </section>
+    {% endif %}
+    <p class="rapport-generation">Généré le {{ rapport.genere_le|date:"d/m/Y H:i:s" }} — America/Toronto. Le téléchargement utilise les données disponibles au moment de sa génération.</p>
+    {% endif %}
+</main>
+</body>
+</html>
+{% endtimezone %}

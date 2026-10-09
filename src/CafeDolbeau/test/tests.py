@@ -3,8 +3,8 @@ from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Client, TransactionCafe
-from .services import ajouter_cafes
+from ..models import Client, TransactionCafe
+from ..services import ajouter_cafes
 from unittest.mock import patch
 
 
@@ -465,7 +465,7 @@ class ContactsUniquesTests(EmployeConnecteMixin, TestCase):
                     Client.objects.create(nom_complet="Alex", **contact)
 
     def test_plusieurs_clients_peuvent_omettre_un_contact(self):
-        from .forms import ClientForm
+        from ..forms.forms import ClientForm
 
         for contact in (
             {"telephone": "418 555-0001"}, {"telephone": "418 555-0002"},
@@ -478,7 +478,7 @@ class ContactsUniquesTests(EmployeConnecteMixin, TestCase):
         self.assertEqual(Client.objects.count(), 5)
 
     def test_modification_conserve_les_contacts_du_meme_client(self):
-        from .forms import ClientForm
+        from ..forms.forms import ClientForm
 
         form = ClientForm(instance=self.personne, data={
             "nom_complet": "Camille Roy", "telephone": self.personne.telephone,

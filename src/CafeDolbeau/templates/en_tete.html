@@ -8,6 +8,9 @@
                 {% if perms.CafeDolbeau.acces_gerant %} · Gérant{% elif perms.CafeDolbeau.acces_base %} · Barista{% endif %}
             </span>
             {% if perms.CafeDolbeau.acces_gerant %}
+            <form method="get" action="{% url 'rapports' %}">
+                <button type="submit">Rapports</button>
+            </form>
             <form class="admin-access" method="get" action="{% url 'admin:index' %}">
                 <button type="submit">Administration</button>
             </form>

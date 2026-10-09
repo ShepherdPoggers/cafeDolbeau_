@@ -119,6 +119,30 @@
 .transaction-ligne .statut-annulation { color: #8d242c; font-weight: 600; }
 .cafe-page .selection-anciennes input[type=checkbox] { display: inline-block; width: auto; margin-right: 8px; }
 .cafe-page fieldset { margin-bottom: 16px; padding: 16px; border: 1px solid #aeb8c5; border-radius: 6px; }
+.rapport-form select { width: 100%; max-width: 480px; padding: 10px 12px; border: 1px solid #aeb8c5; border-radius: 6px; font: inherit; background: #fff; color: #273142; }
+.rapport-dates { display: flex; gap: 24px; flex-wrap: wrap; }
+.rapport-dates p { flex: 1; min-width: 220px; }
+.cafe-page .rapport-form input[type=checkbox] { display: inline-block; width: auto; padding: 0; margin: 0 8px 0 0; }
+.rapport-actions, .rapport-pagination { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.rapport-generation, #regle-periode { color: #526174; font-size: 14px; }
+.cafe-page caption { text-align: left; padding: 8px 0; color: #526174; }
+.rapport-pagination { margin: 16px 0; }
+.rapport-matrice { font-variant-numeric: tabular-nums; }
+.cafe-page .rapport-matrice td, .cafe-page .rapport-matrice thead th:not(:first-child) { text-align: right; }
+.cafe-page .rapport-matrice tbody th { background: #fff; font-weight: 400; white-space: nowrap; }
+.rapport-matrice .rapport-total, .rapport-matrice tfoot { font-weight: 700; background: #edf1f6; }
+.rapport-totaux-details { margin-top: 16px; }
+.rapport-totaux-details summary { cursor: pointer; font-weight: 600; }
+.rapport-detail-table { font-variant-numeric: tabular-nums; }
+.cafe-page .rapport-detail-table th, .cafe-page .rapport-detail-table td { border-bottom: 0; }
+.cafe-page .rapport-detail-table thead th { background: #305b96; color: #fff; }
+.cafe-page .rapport-detail-table td, .cafe-page .rapport-detail-table thead th:not(:first-child) { text-align: right; }
+.rapport-detail-clair { background: #78a3cf; color: #152331; }
+.rapport-detail-fonce { background: #3768a0; color: #fff; }
+.cafe-page .rapport-detail-table tbody th { background: transparent; font-weight: 400; }
+.cafe-page .rapport-detail-table .rapport-detail-periode th { background: #244675; color: #fff; text-align: center; font-weight: 700; }
+.cafe-page .rapport-detail-table tbody tr:hover { background: transparent; }
+.rapport-detail-totaux { background: #edf1f6; font-weight: 700; }
 
 /* Conserve la structure native du formulaire Django. */
 body.login { background: #f4f5f7; }

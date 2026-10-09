@@ -2,8 +2,8 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import Group
 
-from .models import Client, Employe
-from .permissions import PERMISSION_BASE
+from ..models import Client, Employe
+from ..permissions import PERMISSION_BASE
 
 
 class ConnexionForm(AuthenticationForm):

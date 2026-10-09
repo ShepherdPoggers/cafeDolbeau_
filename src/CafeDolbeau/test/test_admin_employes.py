@@ -3,8 +3,8 @@ from django.contrib.auth.models import Group
 from django.test import Client as Navigateur, TestCase, override_settings
 from django.urls import reverse
 
-from .models import Employe
-from .permissions import PERMISSION_BASE, PERMISSION_GERANT
+from ..models import Employe
+from ..permissions import PERMISSION_BASE, PERMISSION_GERANT
 
 
 class AdministrationEmployesTests(TestCase):

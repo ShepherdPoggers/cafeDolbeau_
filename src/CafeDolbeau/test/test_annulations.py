@@ -9,9 +9,9 @@ from django.db.models.deletion import ProtectedError
 from django.test import Client as Navigateur, TestCase, TransactionTestCase
 from django.urls import reverse
 
-from .models import AnnulationTransaction, Client, Employe, TransactionCafe
-from .permissions import PERMISSION_BASE, PERMISSION_GERANT
-from .services import ajouter_cafes, annuler_operation, preparer_annulation
+from ..models import AnnulationTransaction, Client, Employe, TransactionCafe
+from ..permissions import PERMISSION_BASE, PERMISSION_GERANT
+from ..services import ajouter_cafes, annuler_operation, preparer_annulation
 
 
 def creer_employe(username, role="Barista"):

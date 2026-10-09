@@ -1,0 +1,20 @@
+<div class="table-scroll">
+    <table class="rapport-detail-table">
+        <caption>Quantités enregistrées, annulées et nettes par période</caption>
+        <thead><tr><th scope="col">Catégorie</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th></tr></thead>
+        {% for groupe in rapport.groupes %}
+        <tbody class="rapport-detail-groupe {% cycle 'rapport-detail-clair' 'rapport-detail-fonce' %}">
+            <tr class="rapport-detail-periode"><th colspan="4" scope="rowgroup">{{ groupe.libelle_periode }}</th></tr>
+            {% for categorie in groupe.categories %}<tr>
+                <th scope="row">{{ categorie.libelle }}</th><td>{{ categorie.enregistrees }}</td><td>{{ categorie.annulees }}</td><td>{{ categorie.net }}</td>
+            </tr>{% endfor %}
+        </tbody>
+        {% endfor %}
+        <tfoot class="rapport-detail-totaux">
+            <tr class="rapport-detail-periode"><th colspan="4" scope="rowgroup">TOTAL</th></tr>
+            {% for categorie in rapport.totaux %}<tr>
+                <th scope="row">{{ categorie.libelle }}</th><td>{{ categorie.enregistrees }}</td><td>{{ categorie.annulees }}</td><td>{{ categorie.net }}</td>
+            </tr>{% endfor %}
+        </tfoot>
+    </table>
+</div>

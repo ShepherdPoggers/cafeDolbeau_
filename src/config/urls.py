@@ -17,8 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.urls import path
-from CafeDolbeau import views
-from CafeDolbeau.forms import ConnexionForm
+from CafeDolbeau.views import views, views_rapports
+from CafeDolbeau.forms.forms import ConnexionForm
 
 
 urlpatterns = [
@@ -30,6 +30,8 @@ urlpatterns = [
     path('deconnexion/', LogoutView.as_view(), name='deconnexion'),
     path('admin/', admin.site.urls),
     path('', views.accueil, name="accueil"),
+    path('rapports/', views_rapports.rapports, name="rapports"),
+    path('rapports/export.xlsx', views_rapports.rapport_excel, name="rapport_excel"),
     path('clients/<int:pk>/cafes/', views.ajouter_cafes_client, name="ajouter_cafes"),
     path('clients/<int:pk>/transactions/<int:transaction_id>/annuler/', views.annuler_transaction, name="annuler_transaction"),
 ]

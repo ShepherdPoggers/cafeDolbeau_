@@ -8,8 +8,8 @@ from django.urls import path, reverse
 
 from config.urls import urlpatterns as application_urls
 
-from .models import Client, Employe, TransactionCafe
-from .permissions import PERMISSION_BASE, PERMISSION_GERANT, gerant_requis
+from ..models import Client, Employe, TransactionCafe
+from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, gerant_requis
 
 
 def nouvelle_vue(request):

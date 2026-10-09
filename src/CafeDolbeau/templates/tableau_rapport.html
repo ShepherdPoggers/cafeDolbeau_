@@ -1,0 +1,20 @@
+<div class="table-scroll">
+    <table class="rapport-matrice">
+        <caption>Quantités nettes par catégorie, après déduction des annulations</caption>
+        <thead><tr>
+            <th scope="col">{% if rapport.precision == "jour" %}Date{% else %}Période{% endif %}</th>
+            {% for categorie in rapport.totaux %}<th scope="col">{{ categorie.libelle }}</th>{% endfor %}
+            <th scope="col">TOTAL</th>
+        </tr></thead>
+        <tbody>{% for groupe in rapport.groupes %}<tr>
+            <th scope="row">{{ groupe.libelle_periode }}</th>
+            {% for categorie in groupe.categories %}<td>{{ categorie.net }}</td>{% endfor %}
+            <td class="rapport-total">{{ groupe.total }}</td>
+        </tr>{% endfor %}</tbody>
+        <tfoot><tr>
+            <th scope="row">TOTAL</th>
+            {% for categorie in rapport.totaux %}<td>{{ categorie.net }}</td>{% endfor %}
+            <td>{{ rapport.total }}</td>
+        </tr></tfoot>
+    </table>
+</div>

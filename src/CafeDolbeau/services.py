@@ -6,7 +6,7 @@ from django.db import OperationalError, connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from .models import AnnulationTransaction, Client, Employe, TransactionCafe
+from .models import AnnulationTransaction, Client, Employe, ParametresCafe, TransactionCafe
 from .permissions import PERMISSION_BASE, PERMISSION_GERANT
 
 
@@ -58,13 +58,14 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
             if quantite > 2147483647 // 11:
                 raise ValidationError("Nombre de cartes invalide.")
             cafes = quantite * 10
-            lignes = [(TransactionCafe.Type.PREPAYE, cafes, (cafes, cafes, quantite))]
+            lignes = [(TransactionCafe.Type.PREPAYE, cafes, (0, cafes, quantite))]
         else:
             gratuits_utilises = min(client_actuel.nombre_cafes_gratuits, quantite) if type_transaction == TransactionCafe.Type.UTILISE else 0
             prepayes_utilises = min(client_actuel.nombre_cafes_prepayes, quantite - gratuits_utilises) if type_transaction == TransactionCafe.Type.UTILISE else 0
             achetes = quantite - gratuits_utilises - prepayes_utilises
             total = client_actuel.nombre_cafes_achetes
-            gratuits = (total + achetes) // 10 - total // 10
+            seuil = ParametresCafe.charger().cafes_pour_gratuite
+            gratuits = (total + achetes) // seuil - total // seuil
             lignes = [
                 (TransactionCafe.Type.UTILISE, prepayes_utilises + gratuits_utilises, (0, -prepayes_utilises, -gratuits_utilises)),
                 (TransactionCafe.Type.ACHAT, achetes, (achetes, 0, 0)),

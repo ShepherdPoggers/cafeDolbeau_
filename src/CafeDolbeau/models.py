@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -17,6 +17,34 @@ class Employe(User):
             ("acces_base", "Accéder aux fonctions de base du café"),
             ("acces_gerant", "Accéder aux fonctions de gérant du café"),
         ]
+
+
+class ParametresCafe(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    cafes_pour_gratuite = models.PositiveIntegerField(
+        "nombre de cafés achetés pour un café gratuit", default=10,
+        validators=[MinValueValidator(1), MaxValueValidator(2147483647)],
+        help_text="Entier supérieur ou égal à 1. S’applique aux prochains achats sans recalculer les soldes existants.",
+    )
+
+    class Meta:
+        verbose_name = "paramètres du café"
+        verbose_name_plural = "paramètres du café"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(pk=1), name="parametres_cafe_uniques"),
+            models.CheckConstraint(
+                condition=models.Q(cafes_pour_gratuite__gte=1, cafes_pour_gratuite__lte=2147483647),
+                name="seuil_gratuite_entier_positif",
+            ),
+        ]
+
+    @classmethod
+    def charger(cls):
+        parametres, _ = cls.objects.get_or_create(pk=1)
+        return parametres
+
+    def __str__(self):
+        return "Paramètres du café"
 
 
 class Client(models.Model):

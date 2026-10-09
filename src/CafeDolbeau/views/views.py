@@ -9,11 +9,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
-from .forms import AchatCartesForm, AjoutCafesForm, ClientForm
-from .forms_annulation import EffetsAnciennesFormSet, SelectionAnciennesForm
-from .models import Client, TransactionCafe
-from .permissions import PERMISSION_GERANT, acces_base_requis, peut_annuler
-from .services import ajouter_cafes, annuler_operation, preparer_annulation, recapitulatif_annulation
+from ..forms.forms import AchatCartesForm, AjoutCafesForm, ClientForm
+from ..forms.forms_annulation import EffetsAnciennesFormSet, SelectionAnciennesForm
+from ..models import Client, TransactionCafe
+from ..permissions import PERMISSION_GERANT, acces_base_requis, peut_annuler
+from ..services import ajouter_cafes, annuler_operation, preparer_annulation, recapitulatif_annulation
 
 
 def historique_client(client, employe):
