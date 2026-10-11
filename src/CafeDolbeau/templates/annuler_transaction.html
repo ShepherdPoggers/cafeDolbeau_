@@ -21,11 +21,15 @@
             <li>#{{ ligne.pk }} — {{ ligne.date_creation|date:"d/m/Y H:i" }} — {{ ligne.get_type_transaction_display }} : {{ ligne.quantite }} — Employé : {{ ligne.employe.username|default:"Inconnu" }}</li>
             {% endfor %}
         </ul>
+        {% if client_supprime %}
+        <p>Le client a été supprimé. Cette annulation sera conservée pour les rapports, sans modifier de solde de cafés.</p>
+        {% else %}
         <table>
             <thead><tr><th>Solde</th><th>Avant</th><th>Après annulation</th></tr></thead>
             <tbody>{% for solde in soldes %}<tr><td>{{ solde.libelle }}</td><td>{{ solde.avant }}</td><td>{{ solde.apres }}</td></tr>{% endfor %}</tbody>
         </table>
         <p>Les soldes ne descendront jamais sous zéro. Ils seront relus au moment de la confirmation.</p>
+        {% endif %}
         <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="confirmer">

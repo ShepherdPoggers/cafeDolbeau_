@@ -1,5 +1,7 @@
 from django.contrib.auth.decorators import login_required, permission_required
 
+from .models import Client, FusionClient
+
 
 PERMISSION_BASE = "CafeDolbeau.acces_base"
 PERMISSION_GERANT = "CafeDolbeau.acces_gerant"
@@ -20,5 +22,7 @@ def peut_annuler(transaction, employe):
         employe.is_active
         and employe.has_perm(PERMISSION_BASE)
         and not transaction.annulee
+        and not FusionClient.en_attente_pour(transaction.client_id).exists()
+        and (transaction.client_id != Client.ID_SUPPRIME or employe.has_perm(PERMISSION_GERANT))
         and (employe.has_perm(PERMISSION_GERANT) or transaction.employe_id == employe.pk)
     )

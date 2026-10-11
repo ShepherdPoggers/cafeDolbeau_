@@ -2,6 +2,10 @@
 
 Application Django pour gérer les clients, les achats de cafés, les cartes prépayées et les cafés gratuits.
 
+La fusion se lance dans l’administration : sélectionner exactement deux clients, choisir « Fusionner deux clients », puis choisir explicitement le client à conserver et confirmer les compteurs additionnés. Le client fusionné est désactivé et ses transactions sont transférées sans nouvelle récompense. L’historique « Fusions de clients » permet de confirmer le retour arrière tant qu’aucune nouvelle opération n’a été enregistrée sur le client conservé.
+
+Le premier achat de cafés, achat de cartes ou consommation réussi rend la fusion définitive et supprime le client désactivé. L’historique et les provenances des transactions restent conservés, même après une suppression ultérieure. Pendant l’attente, les suppressions, nouvelles fusions, annulations de transactions et modifications manuelles des compteurs des participants sont bloquées. Fusion et retour arrière sont réservés aux gérants et superutilisateurs.
+
 ## Auteurs
 
 - DESA07010400, Desbiens, Anthony
@@ -97,6 +101,12 @@ Sous Windows :
 ```
 
 Suivre les indications du terminal, puis se connecter à [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) lorsque le serveur est démarré. Le compte administrateur est facultatif pour utiliser la page d’accueil.
+
+### Supprimer un client
+
+Les gérants et superutilisateurs peuvent supprimer un client depuis sa fiche dans l’administration, ou plusieurs clients avec l’action « Supprimer les clients sélectionnés ». La confirmation affiche les cafés prépayés et gratuits qui seront perdus. Si les soldes changent entre l’affichage et la validation, une nouvelle confirmation est nécessaire.
+
+La suppression est définitive, mais les transactions et leurs annulations sont conservées sous « Client supprimé ». Ce client fictif est masqué dans la gestion courante des clients. Les gérants peuvent encore annuler ses transactions depuis l’administration des transactions ; ces annulations alimentent les rapports sans rétablir de crédits utilisables.
 
 
 ## Vérifications et dépannage

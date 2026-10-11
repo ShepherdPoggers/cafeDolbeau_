@@ -1,0 +1,33 @@
+{% extends "admin/base_site.html" %}
+{% load l10n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Accueil</a>
+    &rsaquo; <a href="{% url 'admin:CafeDolbeau_client_changelist' %}">Clients</a>
+    &rsaquo; Suppression
+</div>
+{% endblock %}
+
+{% block content %}
+{% if erreurs %}<div role="alert">{% for erreur in erreurs %}<p class="errornote">{{ erreur }}</p>{% endfor %}</div>{% endif %}
+<p>La suppression est définitive. Les cafés prépayés et gratuits restants seront perdus.</p>
+<p>Les transactions et leurs annulations seront conservées et rattachées à « Client supprimé ».</p>
+{% if clients %}
+<table>
+    <thead><tr><th scope="col">Client</th><th scope="col">Cafés prépayés perdus</th><th scope="col">Cafés gratuits perdus</th></tr></thead>
+    <tbody>{% for client in clients %}<tr><td>{{ client.nom_complet }}</td><td>{{ client.nombre_cafes_prepayes }}</td><td>{{ client.nombre_cafes_gratuits }}</td></tr>{% endfor %}</tbody>
+</table>
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="post" value="yes">
+    <input type="hidden" name="confirmation" value="{{ confirmation }}">
+    {% if en_lot %}
+    <input type="hidden" name="action" value="delete_selected">
+    {% for client in clients %}<input type="hidden" name="_selected_action" value="{{ client.pk|unlocalize }}">{% endfor %}
+    {% endif %}
+    <p><input type="submit" value="Confirmer la suppression"></p>
+</form>
+{% else %}<p>Aucun client à supprimer.</p>{% endif %}
+<p><a href="{% url 'admin:CafeDolbeau_client_changelist' %}">Annuler et revenir aux clients</a></p>
+{% endblock %}

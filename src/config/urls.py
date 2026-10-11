@@ -34,4 +34,5 @@ urlpatterns = [
     path('rapports/export.xlsx', views_rapports.rapport_excel, name="rapport_excel"),
     path('clients/<int:pk>/cafes/', views.ajouter_cafes_client, name="ajouter_cafes"),
     path('clients/<int:pk>/transactions/<int:transaction_id>/annuler/', views.annuler_transaction, name="annuler_transaction"),
+    path('transactions/<int:transaction_id>/annuler/', views.annuler_transaction_admin, name="annuler_transaction_admin"),
 ]

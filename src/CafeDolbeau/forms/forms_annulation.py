@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from ..models import TransactionCafe
-from ..services import valider_effets
+from ..services import filtrer_meme_origine, valider_effets
 
 
 class ChoixTransactionField(forms.ModelMultipleChoiceField):
@@ -21,9 +21,9 @@ class SelectionAnciennesForm(forms.Form):
     def __init__(self, *args, client, source, **kwargs):
         super().__init__(*args, **kwargs)
         self.source = source
-        self.fields["lignes"].queryset = TransactionCafe.objects.filter(
+        self.fields["lignes"].queryset = filtrer_meme_origine(TransactionCafe.objects.filter(
             client=client, operation_id__isnull=True, annulation__isnull=True,
-        )
+        ), source)
         if not self.is_bound:
             self.initial["lignes"] = [source.pk]
 

@@ -80,6 +80,9 @@
                     return;
                 }
                 if (!response.ok) throw new Error("Échec de l’enregistrement");
+                if (data.fusion_en_attente === false) {
+                    document.getElementById("avertissement-fusion")?.remove();
+                }
 
                 const compteurs = document.getElementById("compteurs-cafes");
                 if (compteurs) {

@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+{% for erreur in erreurs %}<p class="errornote">{{ erreur }}</p>{% endfor %}
+<p>{{ fusion.source_nom }} → {{ fusion.destination_nom }} — {{ fusion.get_statut_display }}</p>
+{% if confirmation %}
+<p>Les transactions déplacées retrouveront leur client et leur provenance d’origine. {{ fusion.source_nom }} sera réactivé. Les compteurs seront restaurés ainsi :</p>
+<table><thead><tr><th>Compteur</th><th>{{ fusion.source_nom }}</th><th>{{ fusion.destination_nom }}</th></tr></thead>
+<tbody>{% for compteur in compteurs %}<tr><th>{{ compteur.libelle }}</th><td>{{ compteur.source }}</td><td>{{ compteur.destination }}</td></tr>{% endfor %}</tbody></table>
+<form method="post">{% csrf_token %}
+    <input type="hidden" name="confirmation" value="{{ confirmation }}">
+    <button type="submit">Confirmer le retour arrière</button>
+</form>
+{% else %}<p>Cette fusion est clôturée ; aucun retour arrière n’est disponible.</p>{% endif %}
+<p><a href="{% url 'admin:CafeDolbeau_fusionclient_change' fusion.pk %}">Retour à l’historique</a></p>
+{% endblock %}

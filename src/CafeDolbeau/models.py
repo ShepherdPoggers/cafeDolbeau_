@@ -2,6 +2,8 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -48,9 +50,12 @@ class ParametresCafe(models.Model):
 
 
 class Client(models.Model):
+    ID_SUPPRIME = -1
+
     nom_complet = models.CharField("nom complet", max_length=200)
     telephone = models.CharField("numéro de téléphone", max_length=30, blank=True)
     courriel = models.EmailField("courriel", blank=True)
+    est_actif = models.BooleanField("actif", default=True, editable=False)
     nombre_cafes_prepayes = models.PositiveIntegerField(
         "nombre de cafés prépayés", default=0
     )
@@ -83,11 +88,19 @@ class Client(models.Model):
     def clean(self):
         """Valide que le client a au moins un courriel ou un téléphone renseigné."""
         super().clean() # Redéfinition de la fonction parent qui est callé dans le form.is_valid()
-        if not self.courriel.strip() and not self.telephone.strip():
+        if self.pk != self.ID_SUPPRIME and not self.courriel.strip() and not self.telephone.strip():
             raise ValidationError("Veuillez renseigner un courriel ou un téléphone.")
 
     def __str__(self):
         return self.nom_complet
+
+
+@receiver(pre_delete, sender=Client)
+def proteger_client_supprime(sender, instance, **kwargs):
+    if instance.pk == Client.ID_SUPPRIME:
+        raise ValidationError("Le client fictif ne peut pas être supprimé.")
+    if FusionClient.en_attente_pour(instance.pk).exists():
+        raise ValidationError("Annulez ou finalisez la fusion avant de supprimer ce client.")
 
 
 class TransactionCafe(models.Model):
@@ -105,6 +118,10 @@ class TransactionCafe(models.Model):
     )
     client = models.ForeignKey(
         Client, on_delete=models.PROTECT, related_name="transactions_cafe"
+    )
+    client_origine_id = models.BigIntegerField(
+        "identifiant du client d'origine", null=True, blank=True, editable=False,
+        db_index=True,
     )
     quantite = models.PositiveIntegerField("quantité", validators=[MinValueValidator(1)])
     date_creation = models.DateTimeField("date", auto_now_add=True)
@@ -153,3 +170,54 @@ class AnnulationTransaction(models.Model):
 
     def __str__(self):
         return f"Annulation de la transaction #{self.transaction_id}"
+
+
+class FusionClient(models.Model):
+    """Historique et instantanés indépendants de la survie des deux clients."""
+
+    class Statut(models.TextChoices):
+        EN_ATTENTE = "en_attente", "Réversible"
+        ANNULEE = "annulee", "Annulée"
+        FINALISEE = "finalisee", "Définitive"
+
+    client_source_id = models.PositiveBigIntegerField("ID du client fusionné", editable=False)
+    client_destination_id = models.PositiveBigIntegerField("ID du client conservé", editable=False)
+    source_nom = models.CharField("client fusionné", max_length=200, editable=False)
+    destination_nom = models.CharField("client conservé", max_length=200, editable=False)
+    soldes_source = models.JSONField(default=dict, editable=False)
+    soldes_destination = models.JSONField(default=dict, editable=False)
+    transactions_deplacees = models.JSONField(default=list, editable=False)
+    statut = models.CharField("statut", max_length=10, choices=Statut.choices, default=Statut.EN_ATTENTE, editable=False)
+    cree_le = models.DateTimeField("créée le", default=timezone.now, editable=False)
+    cree_par = models.ForeignKey(Employe, on_delete=models.PROTECT, related_name="fusions_creees", verbose_name="créée par", editable=False)
+    terminee_le = models.DateTimeField("terminée le", null=True, blank=True, editable=False)
+    terminee_par = models.ForeignKey(Employe, on_delete=models.PROTECT, related_name="fusions_terminees", verbose_name="terminée par", null=True, blank=True, editable=False)
+    operation_finalisation_id = models.UUIDField("opération de finalisation", null=True, blank=True, editable=False)
+
+    class Meta:
+        verbose_name = "fusion de clients"
+        verbose_name_plural = "fusions de clients"
+        ordering = ["-cree_le", "-pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(client_source_id__gt=0, client_destination_id__gt=0) & ~models.Q(client_source_id=models.F("client_destination_id")),
+                name="fusion_clients_distincts_positifs",
+            ),
+            models.CheckConstraint(condition=models.Q(statut__in=["en_attente", "annulee", "finalisee"]), name="fusion_statut_valide"),
+            models.UniqueConstraint(fields=["client_source_id"], condition=models.Q(statut="en_attente"), name="fusion_source_en_attente_unique"),
+            models.UniqueConstraint(fields=["client_destination_id"], condition=models.Q(statut="en_attente"), name="fusion_destination_en_attente_unique"),
+        ]
+
+    @classmethod
+    def en_attente_pour(cls, *identifiants):
+        return cls.objects.filter(statut=cls.Statut.EN_ATTENTE).filter(
+            models.Q(client_source_id__in=identifiants) | models.Q(client_destination_id__in=identifiants),
+        )
+
+    def __str__(self):
+        return f"{self.source_nom} → {self.destination_nom}"
+
+
+@receiver(pre_delete, sender=FusionClient)
+def proteger_historique_fusion(sender, instance, **kwargs):
+    raise ValidationError("L'historique des fusions ne peut pas être supprimé.")

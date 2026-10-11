@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% load l10n %}
+{% block content %}
+{% for erreur in erreurs %}<p class="errornote">{{ erreur }}</p>{% endfor %}
+<p>Choisissez le client dont le nom et les coordonnées seront conservés.</p>
+<ul>{% for client in clients %}<li>{{ client.nom_complet }} — {{ client.telephone|default:"—" }} — {{ client.courriel|default:"—" }}</li>{% endfor %}</ul>
+<form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="fusionner_selection">
+    {% for client in clients %}<input type="hidden" name="_selected_action" value="{{ client.pk|unlocalize }}">{% endfor %}
+    {% if confirmation %}
+    <p><strong>{{ source.nom_complet }}</strong> sera désactivé. <strong>{{ destination.nom_complet }}</strong> conservera les transactions et les compteurs additionnés, sans récompense supplémentaire.</p>
+    <table>
+        <thead><tr><th>Compteur</th><th>{{ source.nom_complet }} avant</th><th>{{ destination.nom_complet }} avant</th><th>{{ destination.nom_complet }} après</th></tr></thead>
+        <tbody>{% for compteur in compteurs %}<tr><th>{{ compteur.libelle }}</th><td>{{ compteur.source }}</td><td>{{ compteur.destination }}</td><td>{{ compteur.total }}</td></tr>{% endfor %}</tbody>
+    </table>
+    <p>Les quantités, dates, auteurs et annulations des transactions seront conservés. Le retour arrière reste possible jusqu’à la prochaine opération enregistrée sur {{ destination.nom_complet }}. Cette opération supprimera définitivement {{ source.nom_complet }}.</p>
+    <p>En attendant, les suppressions, nouvelles fusions, annulations de transactions et modifications manuelles des compteurs seront bloquées pour ces clients.</p>
+    <input type="hidden" name="destination" value="{{ destination.pk|unlocalize }}">
+    <input type="hidden" name="confirmation" value="{{ confirmation }}">
+    <button type="submit" name="etape" value="confirmer">Confirmer la fusion</button>
+    {% else %}
+    {{ form.as_p }}
+    <button type="submit" name="etape" value="previsualiser">Afficher la confirmation</button>
+    {% endif %}
+    <a href="{% url 'admin:CafeDolbeau_client_changelist' %}">Retour aux clients</a>
+</form>
+{% endblock %}
