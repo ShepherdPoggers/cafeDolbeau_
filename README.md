@@ -14,6 +14,8 @@ Le premier achat de cafés, achat de cartes ou consommation réussi rend la fusi
 ## Documentation
 
 - [Conception du projet](docs/conception.md)
+- [Retrospéction V1](docs/retrospection-V1.md)
+- [ADR](docs/adr)
 - [Utilisation de l'IA](AI-USAGE.md)
 
 
