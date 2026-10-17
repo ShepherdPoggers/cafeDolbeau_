@@ -20,6 +20,7 @@ COMPTEURS = (
 
 
 def _avec_clients_verrouilles(clients, traitement):
+    """Verrouille les clients et leurs fusions en attente, puis exécute le traitement dans une transaction atomique."""
     for tentative in range(6):
         try:
             with transaction.atomic():
@@ -109,8 +110,7 @@ def fusionner_clients(source_id, destination_id, *, employe, soldes_attendus=Non
         if soldes_attendus is not None and soldes_clients(clients.values()) != soldes_attendus:
             raise ValidationError("Les soldes ont changé. Vérifiez la nouvelle confirmation.", code="soldes_modifies")
         fusion = FusionClient.objects.create(
-            client_source_id=source.pk, client_destination_id=destination.pk,
-            source_nom=source.nom_complet, destination_nom=destination.nom_complet,
+            client_source=source, client_destination=destination,
             soldes_source=_compteurs_client(source), soldes_destination=_compteurs_client(destination),
             transactions_deplacees=list(source.transactions_cafe.order_by("pk").values("id", "client_origine_id")),
             cree_par=acteur,
@@ -207,6 +207,7 @@ def supprimer_clients(client_ids, *, employe, soldes_attendus=None):
             )
         if not clients:
             return 0
+        # Création du client fictif si nécessaire, puis transfert de l'historique.
         Client.objects.get_or_create(
             pk=Client.ID_SUPPRIME, defaults={"nom_complet": "Client supprimé", "est_actif": False},
         )
@@ -244,8 +245,8 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
             prepayes_utilises = min(client_actuel.nombre_cafes_prepayes, quantite - gratuits_utilises) if type_transaction == TransactionCafe.Type.UTILISE else 0
             achetes = quantite - gratuits_utilises - prepayes_utilises
             total = client_actuel.nombre_cafes_achetes
-            seuil = ParametresCafe.charger().seuil_gratuite_actif
-            gratuits = (total + achetes) // seuil - total // seuil
+            parametres = ParametresCafe.charger()
+            gratuits = parametres.calculer_cafes_gratuits(total, achetes)
             lignes = [
                 (TransactionCafe.Type.UTILISE, prepayes_utilises + gratuits_utilises, (0, -prepayes_utilises, -gratuits_utilises)),
                 (TransactionCafe.Type.ACHAT, achetes, (achetes, 0, 0)),

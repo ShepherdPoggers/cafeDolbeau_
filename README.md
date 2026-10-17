@@ -2,10 +2,6 @@
 
 Application Django pour gérer les clients, les achats de cafés, les cartes prépayées et les cafés gratuits.
 
-La fusion se lance dans l’administration : sélectionner exactement deux clients, choisir « Fusionner deux clients », puis choisir explicitement le client à conserver et confirmer les compteurs additionnés. Le client fusionné est désactivé et ses transactions sont transférées sans nouvelle récompense. L’historique « Fusions de clients » permet de confirmer le retour arrière tant qu’aucune nouvelle opération n’a été enregistrée sur le client conservé.
-
-Le premier achat de cafés, achat de cartes ou consommation réussi rend la fusion définitive et supprime le client désactivé. L’historique et les provenances des transactions restent conservés, même après une suppression ultérieure. Pendant l’attente, les suppressions, nouvelles fusions, annulations de transactions et modifications manuelles des compteurs des participants sont bloquées. Fusion et retour arrière sont réservés aux gérants et superutilisateurs.
-
 ## Auteurs
 
 - DESA07010400, Desbiens, Anthony

@@ -17,7 +17,7 @@
 <main class="cafe-content">
     <h1>Ajouter des cafés — {{ client.nom_complet }}</h1>
     {% if fusion_en_attente %}
-    <p id="avertissement-fusion" role="alert">Fusion réversible avec {{ fusion_en_attente.source_nom }} : la prochaine opération enregistrée rendra la fusion définitive et supprimera l’ancien client.</p>
+    <p id="avertissement-fusion" role="alert">Fusion réversible avec {{ fusion_en_attente.client_source.nom_complet|default:"Client supprimé" }} : la prochaine opération enregistrée rendra la fusion définitive et supprimera l’ancien client.</p>
     {% endif %}
     <p>Courriel : {{ client.courriel|default:"—" }} · Téléphone : {{ client.telephone|default:"—" }}</p>
     <div id="compteurs-cafes" aria-live="polite">

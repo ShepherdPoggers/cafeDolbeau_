@@ -90,11 +90,11 @@ def confirmer_fusion(modeladmin, request, queryset):
 
 @admin.register(FusionClient)
 class FusionClientAdmin(admin.ModelAdmin):
-    list_display = ("source_nom", "destination_nom", "statut", "cree_le", "cree_par", "terminee_le", "lien_annuler")
+    list_display = ("afficher_source", "afficher_destination", "statut", "cree_le", "cree_par", "terminee_le", "lien_annuler")
     list_filter = ("statut", "cree_le")
-    search_fields = ("source_nom", "destination_nom", "client_source_id", "client_destination_id")
+    search_fields = ("client_source__nom_complet", "client_destination__nom_complet", "client_source__id", "client_destination__id")
     readonly_fields = (
-        "client_source_id", "source_nom", "client_destination_id", "destination_nom", "statut",
+        "afficher_source", "afficher_destination", "statut",
         "compteurs_initiaux", "transactions_deplacees", "cree_le", "cree_par", "terminee_le",
         "terminee_par", "operation_finalisation_id", "lien_annuler",
     )
@@ -102,7 +102,15 @@ class FusionClientAdmin(admin.ModelAdmin):
     actions = None
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("cree_par", "terminee_par")
+        return super().get_queryset(request).select_related("client_source", "client_destination", "cree_par", "terminee_par")
+
+    @admin.display(description="Client fusionné", ordering="client_source__nom_complet")
+    def afficher_source(self, fusion):
+        return fusion.client_source or "Client supprimé"
+
+    @admin.display(description="Client conservé", ordering="client_destination__nom_complet")
+    def afficher_destination(self, fusion):
+        return fusion.client_destination or "Client supprimé"
 
     def has_module_permission(self, request):
         return request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
@@ -136,14 +144,14 @@ class FusionClientAdmin(admin.ModelAdmin):
         lignes = format_html_join("", "<tr><th>{}</th><td>{}</td><td>{}</td></tr>", (
             (libelle, fusion.soldes_source[champ], fusion.soldes_destination[champ]) for champ, _, libelle in COMPTEURS
         ))
-        return format_html("<table><thead><tr><th>Compteur</th><th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table>", fusion.source_nom, fusion.destination_nom, lignes)
+        return format_html("<table><thead><tr><th>Compteur</th><th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table>", self.afficher_source(fusion), self.afficher_destination(fusion), lignes)
 
     def annuler_view(self, request, fusion_id):
         if not self.has_view_permission(request):
             raise PermissionDenied
         if request.method not in ("GET", "POST"):
             return HttpResponseNotAllowed(["GET", "POST"])
-        fusion = get_object_or_404(FusionClient, pk=fusion_id)
+        fusion = get_object_or_404(self.get_queryset(request), pk=fusion_id)
         erreurs, statut = [], 200
         if request.method == "POST":
             try:
@@ -161,7 +169,7 @@ class FusionClientAdmin(admin.ModelAdmin):
             else:
                 self.message_user(request, "La fusion a été annulée. Les deux clients ont été restaurés.", messages.SUCCESS)
                 return redirect("admin:CafeDolbeau_fusionclient_change", fusion.pk)
-            fusion.refresh_from_db()
+            fusion = get_object_or_404(self.get_queryset(request), pk=fusion_id)
         contexte = {
             **self.admin_site.each_context(request), "opts": self.opts, "fusion": fusion,
             "title": "Confirmer le retour arrière de la fusion", "erreurs": erreurs,

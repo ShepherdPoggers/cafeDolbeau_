@@ -143,6 +143,7 @@ class ClientAdmin(admin.ModelAdmin):
         return self._confirmer_suppression(request, queryset, en_lot=True)
 
     def _confirmer_suppression(self, request, queryset, *, en_lot):
+        """Permet de confirmer la suppression d’un ou plusieurs clients, en vérifiant les soldes et en affichant les erreurs."""
         if not self.has_delete_permission(request):
             raise PermissionDenied
         clients = list(queryset.order_by("pk"))

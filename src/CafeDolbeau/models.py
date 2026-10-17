@@ -66,6 +66,13 @@ class ParametresCafe(models.Model):
             return self.cafes_pour_gratuite_precedent
         return self.cafes_pour_gratuite
 
+    def calculer_cafes_gratuits(self, total_achetes, nouveaux_achats):
+        seuil = self.seuil_gratuite_actif
+        return (
+            (total_achetes + nouveaux_achats) // seuil
+            - total_achetes // seuil
+        )
+
     def __str__(self):
         return "Paramètres du café"
 
@@ -194,17 +201,21 @@ class AnnulationTransaction(models.Model):
 
 
 class FusionClient(models.Model):
-    """Historique et instantanés indépendants de la survie des deux clients."""
+    """Historique des fusions, avec les noms lus depuis les clients existants."""
 
     class Statut(models.TextChoices):
         EN_ATTENTE = "en_attente", "Réversible"
         ANNULEE = "annulee", "Annulée"
         FINALISEE = "finalisee", "Définitive"
 
-    client_source_id = models.PositiveBigIntegerField("ID du client fusionné", editable=False)
-    client_destination_id = models.PositiveBigIntegerField("ID du client conservé", editable=False)
-    source_nom = models.CharField("client fusionné", max_length=200, editable=False)
-    destination_nom = models.CharField("client conservé", max_length=200, editable=False)
+    client_source = models.ForeignKey(
+        Client, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="fusions_comme_source", verbose_name="client fusionné", editable=False,
+    )
+    client_destination = models.ForeignKey(
+        Client, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="fusions_comme_destination", verbose_name="client conservé", editable=False,
+    )
     soldes_source = models.JSONField(default=dict, editable=False)
     soldes_destination = models.JSONField(default=dict, editable=False)
     transactions_deplacees = models.JSONField(default=list, editable=False)
@@ -221,12 +232,17 @@ class FusionClient(models.Model):
         ordering = ["-cree_le", "-pk"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(client_source_id__gt=0, client_destination_id__gt=0) & ~models.Q(client_source_id=models.F("client_destination_id")),
+                condition=(
+                    (models.Q(client_source__isnull=True) | models.Q(client_source__gt=0))
+                    & (models.Q(client_destination__isnull=True) | models.Q(client_destination__gt=0))
+                    & (models.Q(client_source__isnull=True) | models.Q(client_destination__isnull=True)
+                       | ~models.Q(client_source=models.F("client_destination")))
+                ),
                 name="fusion_clients_distincts_positifs",
             ),
             models.CheckConstraint(condition=models.Q(statut__in=["en_attente", "annulee", "finalisee"]), name="fusion_statut_valide"),
-            models.UniqueConstraint(fields=["client_source_id"], condition=models.Q(statut="en_attente"), name="fusion_source_en_attente_unique"),
-            models.UniqueConstraint(fields=["client_destination_id"], condition=models.Q(statut="en_attente"), name="fusion_destination_en_attente_unique"),
+            models.UniqueConstraint(fields=["client_source"], condition=models.Q(statut="en_attente"), name="fusion_source_en_attente_unique"),
+            models.UniqueConstraint(fields=["client_destination"], condition=models.Q(statut="en_attente"), name="fusion_destination_en_attente_unique"),
         ]
 
     @classmethod
@@ -236,7 +252,9 @@ class FusionClient(models.Model):
         )
 
     def __str__(self):
-        return f"{self.source_nom} → {self.destination_nom}"
+        source = self.client_source or "Client supprimé"
+        destination = self.client_destination or "Client supprimé"
+        return f"{source} → {destination}"
 
 
 @receiver(pre_delete, sender=FusionClient)

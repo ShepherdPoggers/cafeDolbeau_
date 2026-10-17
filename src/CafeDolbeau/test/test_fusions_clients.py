@@ -87,7 +87,7 @@ class FusionClientTests(TestCase):
             }
             self.assertEqual(ligne, attendue)
         self.assertEqual(fusion.statut, FusionClient.Statut.EN_ATTENTE)
-        self.assertEqual((fusion.cree_par_id, fusion.source_nom, fusion.destination_nom), (self.gerant.pk, "Camille", "Alex"))
+        self.assertEqual((fusion.cree_par_id, str(fusion.client_source), str(fusion.client_destination)), (self.gerant.pk, "Camille", "Alex"))
         self.assertEqual(LogEntry.objects.filter(action_flag=CHANGE).count(), 2)
         self.assertFalse(Client.objects.filter(pk=-1).exists())
 
@@ -158,9 +158,55 @@ class FusionClientTests(TestCase):
         self.acheter()
         supprimer_clients([self.destination.pk], employe=self.gerant)
         fusion.refresh_from_db()
-        self.assertEqual((fusion.client_source_id, fusion.client_destination_id), (self.source.pk, self.destination.pk))
-        self.assertEqual((fusion.source_nom, fusion.destination_nom), ("Camille", "Alex"))
-        self.assertContains(self.client.get(reverse("admin:CafeDolbeau_fusionclient_change", args=[fusion.pk])), "Camille")
+        self.assertIsNone(fusion.client_source_id)
+        self.assertIsNone(fusion.client_destination_id)
+        self.assertEqual(str(fusion), "Client supprimé → Client supprimé")
+        self.assertContains(self.client.get(reverse("admin:CafeDolbeau_fusionclient_change", args=[fusion.pk])), "Client supprimé")
+
+    def test_noms_affiches_et_recherche_suivent_les_clients(self):
+        fusion = self.fusionner()
+        Client.objects.filter(pk=self.source.pk).update(nom_complet="Camille corrigé")
+        Client.objects.filter(pk=self.destination.pk).update(nom_complet="Alex corrigé")
+        fusion.refresh_from_db()
+        self.assertEqual(str(fusion), "Camille corrigé → Alex corrigé")
+        liste = reverse("admin:CafeDolbeau_fusionclient_changelist")
+        for recherche in ("Camille corrigé", "Alex corrigé", str(self.source.pk), str(self.destination.pk)):
+            reponse = self.client.get(liste, {"q": recherche})
+            self.assertEqual([ligne.pk for ligne in reponse.context["cl"].result_list], [fusion.pk])
+        for url in (
+            reverse("admin:CafeDolbeau_fusionclient_change", args=[fusion.pk]),
+            reverse("admin:CafeDolbeau_fusionclient_annuler", args=[fusion.pk]),
+        ):
+            reponse = self.client.get(url)
+            self.assertContains(reponse, "Camille corrigé")
+            self.assertContains(reponse, "Alex corrigé")
+        self.assertContains(self.client.get(reverse("ajouter_cafes", args=[self.destination.pk])), "Camille corrigé")
+
+    def test_suppression_participant_fusion_annulee_conserve_historique(self):
+        for personne, champ, autre_champ, autre_id in (
+            (self.source, "client_source_id", "client_destination_id", self.destination.pk),
+            (self.destination, "client_destination_id", "client_source_id", self.source.pk),
+        ):
+            with self.subTest(client=personne.pk), transaction.atomic():
+                fusion = self.fusionner()
+                annuler_fusion(fusion.pk, employe=self.gerant)
+                self.assertEqual(supprimer_clients([personne.pk], employe=self.gerant), 1)
+                fusion.refresh_from_db()
+                self.assertIsNone(getattr(fusion, champ))
+                self.assertEqual(getattr(fusion, autre_champ), autre_id)
+                self.assertEqual(fusion.statut, FusionClient.Statut.ANNULEE)
+                self.assertTrue(Client.objects.filter(pk=autre_id).exists())
+                transaction.set_rollback(True)
+
+    def test_suppression_en_lot_conserve_fusion_sans_participants(self):
+        fusion = self.fusionner()
+        annuler_fusion(fusion.pk, employe=self.gerant)
+        self.assertEqual(supprimer_clients([self.source.pk, self.destination.pk], employe=self.gerant), 2)
+        fusion.refresh_from_db()
+        self.assertIsNone(fusion.client_source_id)
+        self.assertIsNone(fusion.client_destination_id)
+        self.assertEqual(fusion.statut, FusionClient.Statut.ANNULEE)
+        self.assertEqual(str(fusion), "Client supprimé → Client supprimé")
 
     def test_permissions_fraiches_fusion_et_retour_arriere(self):
         with self.assertRaises(PermissionDenied):
@@ -625,6 +671,50 @@ class FusionConcurrenceTests(TransactionTestCase):
 
 
 class FusionMigrationTests(TransactionTestCase):
+    def test_migration_retire_noms_preserve_fusions_et_detache_clients_absents(self):
+        avant = [("CafeDolbeau", "0015_date_application_gratuite")]
+        executor = MigrationExecutor(connection)
+        dernier_schema = executor.loader.graph.leaf_nodes()
+        try:
+            executor.migrate(avant)
+            apps = executor.loader.project_state(avant).apps
+            AncienClient = apps.get_model("CafeDolbeau", "Client")
+            AncienneFusion = apps.get_model("CafeDolbeau", "FusionClient")
+            AncienneTransaction = apps.get_model("CafeDolbeau", "TransactionCafe")
+            User = apps.get_model("auth", "User")
+            employe = User.objects.create(username="migration-fusion-noms")
+            source = AncienClient.objects.create(nom_complet="Source actuelle", telephone="migration-source")
+            destination = AncienClient.objects.create(nom_complet="Destination actuelle", telephone="migration-destination")
+            for source_id, destination_id, statut in (
+                (source.pk, destination.pk, "en_attente"),
+                (source.pk, destination.pk, "annulee"),
+                (999991, destination.pk, "finalisee"),
+                (999992, 999993, "finalisee"),
+            ):
+                AncienneFusion.objects.create(
+                    client_source_id=source_id, client_destination_id=destination_id,
+                    source_nom="Ancien nom source", destination_nom="Ancien nom destination",
+                    cree_par_id=employe.pk, statut=statut,
+                )
+            AncienneTransaction.objects.create(client=destination, quantite=2, client_origine_id=999991)
+            clients = list(AncienClient.objects.order_by("pk").values())
+            transactions = list(AncienneTransaction.objects.values())
+            fusions = list(AncienneFusion.objects.order_by("pk").values())
+            MigrationExecutor(connection).migrate(dernier_schema)
+            attendues = []
+            for fusion in fusions:
+                attendue = {champ: valeur for champ, valeur in fusion.items() if champ not in ("source_nom", "destination_nom")}
+                attendue["client_source_id"] = source.pk if fusion["client_source_id"] == source.pk else None
+                attendue["client_destination_id"] = destination.pk if fusion["client_destination_id"] == destination.pk else None
+                attendues.append(attendue)
+            self.assertEqual(list(FusionClient.objects.order_by("pk").values()), attendues)
+            self.assertEqual(list(Client.objects.order_by("pk").values()), clients)
+            self.assertEqual(list(TransactionCafe.objects.values()), transactions)
+            self.assertEqual(str(FusionClient.objects.get(pk=fusions[0]["id"])), "Source actuelle → Destination actuelle")
+            connection.check_constraints()
+        finally:
+            MigrationExecutor(connection).migrate(dernier_schema)
+
     def test_migration_active_clients_preserve_donnees_sans_fusion(self):
         avant = [("CafeDolbeau", "0013_transactioncafe_client_origine_id")]
         executor = MigrationExecutor(connection)
