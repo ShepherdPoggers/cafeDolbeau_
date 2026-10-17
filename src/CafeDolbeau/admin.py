@@ -11,7 +11,7 @@ from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .forms.forms import CreationEmployeForm, ModificationEmployeForm
+from .forms.forms import CreationEmployeForm, ModificationEmployeForm, ParametresCafeForm
 from .models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
 from .admin_fusions import confirmer_fusion
 from .permissions import PERMISSION_GERANT
@@ -193,9 +193,21 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(ParametresCafe)
 class ParametresCafeAdmin(admin.ModelAdmin):
-    fields = ("cafes_pour_gratuite",)
-    list_display = ("__str__", "cafes_pour_gratuite")
+    form = ParametresCafeForm
+    fields = ("seuil_actuel", "cafes_pour_gratuite", "date_application")
+    readonly_fields = ("seuil_actuel",)
+    list_display = ("__str__", "seuil_actuel", "cafes_pour_gratuite", "date_application")
     actions = None
+
+    @admin.display(description="Seuil actuellement en vigueur")
+    def seuil_actuel(self, obj):
+        return obj.seuil_gratuite_actif
+
+    def save_model(self, request, obj, form, change):
+        # Le formulaire est enregistré dans la transaction de l’administration.
+        actuel = ParametresCafe.objects.select_for_update().get(pk=obj.pk)
+        obj.cafes_pour_gratuite_precedent = actuel.seuil_gratuite_actif
+        super().save_model(request, obj, form, change)
 
     def get_queryset(self, request):
         ParametresCafe.charger()

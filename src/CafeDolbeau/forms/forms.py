@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import Group
 
-from ..models import Client, Employe
+from ..models import Client, Employe, ParametresCafe
 from ..permissions import PERMISSION_BASE
 
 
@@ -51,6 +51,15 @@ class CreationEmployeForm(RoleEmployeForm, UserCreationForm):
 class ModificationEmployeForm(RoleEmployeForm, UserChangeForm):
     class Meta(UserChangeForm.Meta):
         model = Employe
+
+
+class ParametresCafeForm(forms.ModelForm):
+    class Meta:
+        model = ParametresCafe
+        fields = ("cafes_pour_gratuite", "date_application")
+        widgets = {
+            "date_application": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
 
 
 class AjoutCafesForm(forms.Form):

@@ -104,6 +104,12 @@ Sous Windows :
 
 Suivre les indications du terminal, puis se connecter à [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) lorsque le serveur est démarré. Le compte administrateur est facultatif pour utiliser la page d’accueil.
 
+### Planifier la règle du café gratuit
+
+Dans l’administration, les gérants et superutilisateurs peuvent ouvrir « Paramètres du café », saisir le nombre de cafés achetés pour un café gratuit et choisir la date d’entrée en vigueur. Le seuil actuellement en vigueur est affiché à titre de référence. L’ancienne règle reste active jusqu’à minuit à la date choisie, heure du Québec ; la nouvelle règle s’applique ensuite automatiquement aux prochains achats. Choisir aujourd’hui pour un changement immédiat.
+
+Une modification remplace toute planification précédente. Les cafés accumulés servent au calcul avec le nouveau seuil, sans recalculer les transactions ni les soldes existants.
+
 ### Supprimer un client
 
 Les gérants et superutilisateurs peuvent supprimer un client depuis sa fiche dans l’administration, ou plusieurs clients avec l’action « Supprimer les clients sélectionnés ». La confirmation affiche les cafés prépayés et gratuits qui seront perdus. Si les soldes changent entre l’affichage et la validation, une nouvelle confirmation est nécessaire.

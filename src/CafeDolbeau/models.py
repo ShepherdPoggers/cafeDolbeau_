@@ -22,11 +22,20 @@ class Employe(User):
 
 
 class ParametresCafe(models.Model):
+    """Gestion de la règle des cafés gratuits"""
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
     cafes_pour_gratuite = models.PositiveIntegerField(
         "nombre de cafés achetés pour un café gratuit", default=10,
         validators=[MinValueValidator(1), MaxValueValidator(2147483647)],
-        help_text="Entier supérieur ou égal à 1. S’applique aux prochains achats sans recalculer les soldes existants.",
+        help_text="Entier supérieur ou égal à 1. S’applique à la date choisie sans recalculer les soldes existants.",
+    )
+    date_application = models.DateField(
+        "date d’entrée en vigueur", default=timezone.localdate,
+        help_text="À partir de minuit, heure du Québec. Choisissez aujourd’hui pour une application immédiate.",
+    )
+    cafes_pour_gratuite_precedent = models.PositiveIntegerField(
+        default=10, editable=False,
+        validators=[MinValueValidator(1), MaxValueValidator(2147483647)],
     )
 
     class Meta:
@@ -38,12 +47,24 @@ class ParametresCafe(models.Model):
                 condition=models.Q(cafes_pour_gratuite__gte=1, cafes_pour_gratuite__lte=2147483647),
                 name="seuil_gratuite_entier_positif",
             ),
+            models.CheckConstraint(
+                condition=models.Q(cafes_pour_gratuite_precedent__gte=1, cafes_pour_gratuite_precedent__lte=2147483647),
+                name="seuil_gratuite_precedent_positif",
+            ),
         ]
 
     @classmethod
     def charger(cls):
+        """Retourne l’instance unique des paramètres du café, en la créant si nécessaire."""
         parametres, _ = cls.objects.get_or_create(pk=1)
         return parametres
+
+    @property
+    def seuil_gratuite_actif(self):
+        """Retourne le bon seuil de cafés selon la date d’application choisie."""
+        if timezone.localdate() < self.date_application:
+            return self.cafes_pour_gratuite_precedent
+        return self.cafes_pour_gratuite
 
     def __str__(self):
         return "Paramètres du café"

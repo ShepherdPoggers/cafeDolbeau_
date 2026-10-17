@@ -244,7 +244,7 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
             prepayes_utilises = min(client_actuel.nombre_cafes_prepayes, quantite - gratuits_utilises) if type_transaction == TransactionCafe.Type.UTILISE else 0
             achetes = quantite - gratuits_utilises - prepayes_utilises
             total = client_actuel.nombre_cafes_achetes
-            seuil = ParametresCafe.charger().cafes_pour_gratuite
+            seuil = ParametresCafe.charger().seuil_gratuite_actif
             gratuits = (total + achetes) // seuil - total // seuil
             lignes = [
                 (TransactionCafe.Type.UTILISE, prepayes_utilises + gratuits_utilises, (0, -prepayes_utilises, -gratuits_utilises)),
