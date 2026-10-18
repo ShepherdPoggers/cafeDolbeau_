@@ -160,6 +160,29 @@ Les gérants et superutilisateurs peuvent supprimer un client depuis sa fiche da
 La suppression est définitive, mais les transactions et leurs annulations sont conservées sous « Client supprimé ». Ce client fictif est masqué dans la gestion courante des clients. Les gérants peuvent encore annuler ses transactions depuis l’administration des transactions ; ces annulations alimentent les rapports sans rétablir de crédits utilisables.
 
 
+## Lancer tous les tests
+
+Installer les dépendances Python selon la section d’installation. Node.js doit aussi être installé pour les tests JavaScript ; aucun paquet npm supplémentaire n’est requis.
+
+Depuis la racine du dépôt, sous Linux ou macOS :
+
+```bash
+source .venv/bin/activate
+python src/manage.py test CafeDolbeau
+node --test src/CafeDolbeau/tests_js/rapports.test.cjs
+```
+
+Sous Windows PowerShell :
+
+```powershell
+.\.venv\Scripts\python.exe src/manage.py test CafeDolbeau
+node --test src/CafeDolbeau/tests_js/rapports.test.cjs
+```
+
+La première commande de test lance tous les tests Django, notamment ceux des permissions, transactions, annulations, rapports, paramètres, suppressions, fusions et migrations V1. La commande Node.js lance les tests JavaScript des rapports.
+
+Django crée automatiquement une base de test temporaire et les tests préparent leurs propres données. Les résultats des deux suites sont affichés dans le terminal.
+
 ## Vérifications et dépannage
 
 Ces commandes s’exécutent à la racine avec l’environnement virtuel activé. Sous Windows, utiliser `.\.venv\Scripts\python.exe` à la place de `python`.
@@ -170,11 +193,7 @@ python src/manage.py check
 python src/manage.py showmigrations
 ```
 
-`check` vérifie la configuration Django. Dans `showmigrations`, `[X]` indique une migration appliquée. Ces vérifications ne remplacent pas les tests fonctionnels, disponibles avec :
-
-```bash
-python src/manage.py test CafeDolbeau
-```
+`check` vérifie la configuration Django. Dans `showmigrations`, `[X]` indique une migration appliquée. Pour les tests, suivre la section [Lancer tous les tests](#lancer-tous-les-tests).
 
 | Problème | Solution |
 | --- | --- |

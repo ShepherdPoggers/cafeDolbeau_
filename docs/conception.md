@@ -1,5 +1,26 @@
 # Conception Café Dolbeau
 
+## Table des matières
+
+- [Implémentation](#implémentation)
+  - [Structure du projet](#structure-du-projet)
+  - [Clients](#clients)
+    - [Suppression d'un client](#suppression-dun-client)
+    - [Fusion de deux clients](#fusion-de-deux-clients)
+  - [Achat d'articles](#achat-darticles)
+    - [Onzième café gratuit et cartes prépayées](#onzième-café-gratuit-et-cartes-prépayées)
+      - [Calcul des cafés gratuits](#calcul-des-cafés-gratuits)
+      - [Explication de la logique](#explication-de-la-logique)
+        - [Tableau explicatif](#tableau-explicatif)
+      - [Consommation](#consommation)
+    - [Annuler une transaction](#annuler-une-transaction)
+  - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
+  - [Création des rapports](#création-des-rapports)
+  - [Gestion des permissions](#gestion-des-permissions)
+  - [Choix techniques](#choix-techniques)
+    - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
+    - [Cohérence des données](#cohérence-des-données)
+    - [Migration des données](#migration-des-données)
 
 ## Implémentation
 
