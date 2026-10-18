@@ -139,7 +139,7 @@ class AdministrationEmployesTests(TestCase):
         self.assertTrue(employe.check_password("456"))
 
     def test_employes_ordinaires_ne_peuvent_pas_creer_de_comptes(self):
-        for role in ("Barista", "Gérant"):
+        for role in ("Barista",):
             with self.subTest(role=role):
                 employe = Employe.objects.create_user("employe-" + role)
                 employe.groups.add(Group.objects.get(name=role))
@@ -148,3 +148,27 @@ class AdministrationEmployesTests(TestCase):
                 response = navigateur.post(self.url_ajout, self.donnees_creation(), follow=True)
                 self.assertEqual(response.status_code, 403)
         self.assertFalse(Employe.objects.filter(username="nouvel-employe").exists())
+
+    @override_settings(AUTH_PASSWORD_VALIDATORS=[])
+    def test_gerant_peut_creer_les_deux_roles_sans_privileges_avances(self):
+        gerant = Employe.objects.create_user("gerant-createur")
+        gerant.groups.add(Group.objects.get(name="Gérant"))
+        self.client.force_login(gerant)
+        self.assertContains(self.client.get(reverse("admin:index")), self.url_ajout)
+        self.assertEqual(self.client.get(self.url_ajout).status_code, 200)
+        for role in ("Barista", "Gérant"):
+            with self.subTest(role=role):
+                donnees = self.donnees_creation("cree-par-gerant-" + role, role)
+                donnees.update(is_superuser="on", is_staff="on",
+                               user_permissions=[1], groups=[Group.objects.get(name="Gérant").pk])
+                response = self.client.post(self.url_ajout, donnees)
+                self.assertRedirects(response, reverse("admin:index"))
+                employe = Employe.objects.get(username=donnees["username"])
+                self.assertTrue(employe.check_password("123"))
+                self.assertFalse(employe.is_superuser)
+                self.assertFalse(employe.is_staff)
+                self.assertFalse(employe.user_permissions.exists())
+                self.assertEqual(list(employe.groups.values_list("name", flat=True)), [role])
+                url = reverse("admin:CafeDolbeau_employe_change", args=[employe.pk])
+                self.assertEqual(self.client.get(url).status_code, 403)
+                self.assertEqual(self.client.post(url, {"is_superuser": "on"}).status_code, 403)

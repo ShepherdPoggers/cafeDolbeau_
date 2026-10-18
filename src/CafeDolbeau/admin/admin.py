@@ -48,6 +48,30 @@ class EmployeAdmin(UserAdmin):
     list_filter = ("is_active", "groups")
     filter_horizontal = ("user_permissions",)
 
+    def has_module_permission(self, request):
+        return super().has_module_permission(request) or (
+            request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
+        )
+
+    def has_add_permission(self, request):
+        return super().has_add_permission(request) or (
+            request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
+        )
+
+    def _add_view(self, request, form_url="", extra_context=None):
+        if request.user.is_superuser:
+            return super()._add_view(request, form_url, extra_context)
+        # UserAdmin exige aussi le droit de modification car son formulaire
+        # standard permet des privilèges avancés. Notre formulaire de création
+        # limite les champs au nom, au rôle et au mot de passe ; conserver
+        # le contrôle d'ajout de ModelAdmin sans ouvrir la modification des comptes.
+        return admin.ModelAdmin.add_view(self, request, form_url, extra_context)
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if request.user.is_superuser:
+            return super().response_add(request, obj, post_url_continue)
+        return admin.ModelAdmin.response_add(self, request, obj, post_url_continue)
+
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("groups")
 
