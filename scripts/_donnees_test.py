@@ -1,12 +1,12 @@
-"""Initialisation des données de test V2 sur une nouvelle base."""
+"""Initialisation des données de test sur une nouvelle base."""
 import argparse
 import os
 from pathlib import Path
 import sys
 
 
-def initialiser():
-    parser = argparse.ArgumentParser(description="Créer une base de démonstration V2.")
+def initialiser(version="V2"):
+    parser = argparse.ArgumentParser(description=f"Créer une base de démonstration {version}.")
     parser.add_argument("--database", required=True, type=Path, help="Nouveau fichier SQLite à créer.")
     args = parser.parse_args()
     chemin = args.database.resolve()
