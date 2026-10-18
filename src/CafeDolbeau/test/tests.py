@@ -27,18 +27,20 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["achetes"], 12)
-        self.assertEqual(response.json()["prepayes"], 12)
+        self.assertEqual(response.json()["prepayes"], 11)
+        self.assertEqual(response.json()["gratuits"], 1)
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_prepayes, 12)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 11)
+        self.assertEqual(self.personne.nombre_cafes_gratuits, 1)
         self.assertEqual(TransactionCafe.objects.get(type_transaction="achat").quantite, 3)
         self.assertEqual(TransactionCafe.objects.get(type_transaction="gratuit").quantite, 1)
         self.assertFalse(TransactionCafe.objects.filter(type_transaction="utilise").exists())
 
     def test_utilisation_invalide_affiche_les_erreurs_sur_son_formulaire(self):
         response = self.client.post(self.url, {"quantite": 0, "type_transaction": "utilise"})
-        self.assertTrue(response.context["form_utilisation"].errors)
-        self.assertFalse(response.context["form"].is_bound)
+        self.assertTrue(response.context["form"].errors)
         self.assertFalse(response.context["form_prepaye"].is_bound)
+        self.assertContains(response, response.context["form"].errors["quantite"][0])
         self.assertEqual(TransactionCafe.objects.count(), 0)
 
     def test_ajouts_asynchrones_actualisent_compteurs_et_historique(self):
@@ -46,15 +48,17 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
             "quantite": 1, "type_transaction": "prepaye",
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["prepayes"], 11)
-        self.assertEqual(response.json()["achetes"], 17)
+        self.assertEqual(response.json()["prepayes"], 10)
+        self.assertEqual(response.json()["gratuits"], 1)
+        self.assertEqual(response.json()["achetes"], 7)
         response = self.client.post(self.url, {
             "quantite": 15, "type_transaction": "utilise",
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["achetes"], 21)
-        self.assertEqual(data["prepayes"], 1)
+        self.assertEqual(data["achetes"], 11)
+        self.assertEqual(data["prepayes"], 0)
+        self.assertEqual(data["gratuits"], 1)
         self.assertIn("Cafés gratuits", data["historique"])
         self.assertIn("Cafés prépayés consommés", data["historique"])
         self.assertTrue(any("felicitations" in message["tags"] for message in data["messages"]))
@@ -81,12 +85,14 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         ):
             with self.subTest(total=total, quantite=quantite):
                 Client.objects.filter(pk=self.personne.pk).update(
-                    nombre_cafes_achetes=total, nombre_cafes_prepayes=0
+                    nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
+                    nombre_cafes_gratuits=0,
                 )
                 transactions = ajouter_cafes(self.personne, quantite, employe=self.employe)
                 self.personne.refresh_from_db()
                 self.assertEqual(self.personne.nombre_cafes_achetes, total + quantite)
-                self.assertEqual(self.personne.nombre_cafes_prepayes, gratuits)
+                self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+                self.assertEqual(self.personne.nombre_cafes_gratuits, gratuits)
                 self.assertEqual(sum(t.quantite for t in transactions), quantite + gratuits)
                 self.assertEqual(sum(t.quantite for t in transactions
                                      if t.type_transaction == TransactionCafe.Type.ACHAT), quantite)
@@ -101,7 +107,8 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         response = self.client.post(self.url, {"quantite": 4, "type_transaction": "utilise"}, follow=True)
         self.assertContains(response, "Fecilication un café gratuit est accordé")
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_prepayes, 1)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+        self.assertEqual(self.personne.nombre_cafes_gratuits, 1)
         self.assertEqual(self.personne.nombre_cafes_achetes, 12)
         self.assertEqual(TransactionCafe.objects.count(), 3)
         self.client.get(self.url)
@@ -111,11 +118,17 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=10)
         transactions = ajouter_cafes(self.personne, 2, TransactionCafe.Type.PREPAYE, employe=self.employe)
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_achetes, 30)
-        self.assertEqual(self.personne.nombre_cafes_prepayes, 22)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 10)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 20)
+        self.assertEqual(self.personne.nombre_cafes_gratuits, 2)
         self.assertEqual(len(transactions), 1)
-        self.assertEqual(transactions[0].quantite, 22)
+        self.assertEqual(transactions[0].quantite, 20)
         self.assertEqual(transactions[0].type_transaction, TransactionCafe.Type.PREPAYE)
+        self.assertEqual(
+            (transactions[0].variation_achetes, transactions[0].variation_prepayes,
+             transactions[0].variation_gratuits),
+            (0, 20, 2),
+        )
 
     def test_cartes_preservent_la_progression_et_la_prochaine_gratuite(self):
         for total in range(10):
@@ -123,15 +136,17 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
                 with self.subTest(total=total, cartes=cartes):
                     Client.objects.filter(pk=self.personne.pk).update(
                         nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
+                        nombre_cafes_gratuits=0,
                     )
                     transactions = ajouter_cafes(self.personne, cartes, TransactionCafe.Type.PREPAYE, employe=self.employe)
                     self.personne.refresh_from_db()
-                    self.assertEqual(self.personne.nombre_cafes_achetes, total + cartes * 10)
-                    self.assertEqual(self.personne.nombre_cafes_prepayes, cartes * 11)
+                    self.assertEqual(self.personne.nombre_cafes_achetes, total)
+                    self.assertEqual(self.personne.nombre_cafes_prepayes, cartes * 10)
+                    self.assertEqual(self.personne.nombre_cafes_gratuits, cartes)
                     self.assertEqual(len(transactions), 1)
                     ajouter_cafes(self.personne, cartes * 11, TransactionCafe.Type.UTILISE, employe=self.employe)
                     self.personne.refresh_from_db()
-                    self.assertEqual(self.personne.nombre_cafes_achetes, total + cartes * 10)
+                    self.assertEqual(self.personne.nombre_cafes_achetes, total)
                     self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
                     if total < 9:
                         ajouter_cafes(self.personne, 9 - total, employe=self.employe)
@@ -139,12 +154,13 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
                         self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
                     ajouter_cafes(self.personne, 1, employe=self.employe)
                     self.personne.refresh_from_db()
-                    self.assertEqual(self.personne.nombre_cafes_prepayes, 1)
-                    self.assertEqual(self.personne.nombre_cafes_achetes, (cartes + 1) * 10)
+                    self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
+                    self.assertEqual(self.personne.nombre_cafes_gratuits, 1)
+                    self.assertEqual(self.personne.nombre_cafes_achetes, 10)
                     ajouter_cafes(self.personne, 1, TransactionCafe.Type.UTILISE, employe=self.employe)
                     self.personne.refresh_from_db()
                     self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
-                    self.assertEqual(self.personne.nombre_cafes_achetes, (cartes + 1) * 10)
+                    self.assertEqual(self.personne.nombre_cafes_achetes, 10)
 
     def test_echec_ligne_gratuite_annule_toute_la_commande(self):
         Client.objects.filter(pk=self.personne.pk).update(
@@ -170,31 +186,35 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
             "quantite": 1, "type_transaction": "prepaye",
         }, follow=True)
         self.assertRedirects(response, self.url)
-        self.assertContains(response, "Total de cafés prépayés : 11")
+        self.assertContains(response, "Total de cafés prépayés : 10")
+        self.assertContains(response, "Total de cafés gratuits : 1")
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_achetes, 17)
-        self.assertEqual(self.personne.nombre_cafes_prepayes, 11)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 7)
+        self.assertEqual(self.personne.nombre_cafes_prepayes, 10)
+        self.assertEqual(self.personne.nombre_cafes_gratuits, 1)
         ajout = TransactionCafe.objects.get()
         self.assertEqual(ajout.type_transaction, TransactionCafe.Type.PREPAYE)
-        self.assertEqual(ajout.quantite, 11)
+        self.assertEqual(ajout.quantite, 10)
         self.client.get(self.url)
         self.assertEqual(TransactionCafe.objects.count(), 1)
         self.client.post(self.url, {"quantite": 2, "type_transaction": "utilise"})
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_achetes, 17)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 7)
         self.assertEqual(self.personne.nombre_cafes_prepayes, 9)
         self.assertEqual(TransactionCafe.objects.get(type_transaction="utilise").quantite, 2)
 
     def test_commande_utilise_les_prepayes_disponibles(self):
-        for solde, reste, total in ((0, 1, 10), (2, 0, 8), (3, 0, 7), (5, 2, 7)):
+        for solde, reste, total in ((0, 0, 10), (2, 0, 8), (3, 0, 7), (5, 2, 7)):
             with self.subTest(solde=solde):
                 Client.objects.filter(pk=self.personne.pk).update(
-                    nombre_cafes_prepayes=solde, nombre_cafes_achetes=7
+                    nombre_cafes_prepayes=solde, nombre_cafes_achetes=7,
+                    nombre_cafes_gratuits=0,
                 )
                 transactions = ajouter_cafes(self.personne, 3, TransactionCafe.Type.UTILISE, employe=self.employe)
                 self.personne.refresh_from_db()
                 self.assertEqual(self.personne.nombre_cafes_achetes, total)
                 self.assertEqual(self.personne.nombre_cafes_prepayes, reste)
+                self.assertEqual(self.personne.nombre_cafes_gratuits, total // 10)
                 self.assertEqual(sum(t.quantite for t in transactions), 3 + (total // 10))
                 self.assertEqual(sum(t.quantite for t in transactions
                                      if t.type_transaction == TransactionCafe.Type.UTILISE), min(solde, 3))
@@ -204,13 +224,14 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         for _ in range(11):
             ajouter_cafes(self.personne, 1, TransactionCafe.Type.UTILISE, employe=self.employe)
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_achetes, 17)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 7)
         self.assertEqual(self.personne.nombre_cafes_prepayes, 0)
         self.assertEqual(TransactionCafe.objects.filter(type_transaction="utilise").count(), 11)
+        self.assertEqual(self.personne.nombre_cafes_gratuits, 0)
         self.assertFalse(TransactionCafe.objects.filter(type_transaction="gratuit").exists())
         ajouter_cafes(self.personne, 4, employe=self.employe)
         self.personne.refresh_from_db()
-        self.assertEqual(self.personne.nombre_cafes_achetes, 21)
+        self.assertEqual(self.personne.nombre_cafes_achetes, 11)
         self.assertEqual(TransactionCafe.objects.get(type_transaction="gratuit").quantite, 1)
 
     def test_prepaye_invalide_et_erreurs_sur_le_bon_formulaire(self):
@@ -383,11 +404,12 @@ class RechercheClientTests(EmployeConnecteMixin, TestCase):
 class ModificationClientTests(EmployeConnecteMixin, TestCase):
     def setUp(self):
         super().setUp()
+        self.employe.groups.set([Group.objects.get(name="Gérant")])
         self.personne = Client.objects.create(
             nom_complet="Camille Tremblay", courriel="camille@example.com",
             telephone="418 555-1234", nombre_cafes_achetes=7,
         )
-        self.url = reverse("modifier_client", args=[self.personne.pk])
+        self.url = reverse("admin:CafeDolbeau_client_change", args=[self.personne.pk])
 
     def test_accueil_sans_bouton_modifier_et_formulaire_prerempli(self):
         response = self.client.get(reverse("accueil"), {"q": "Camille"})
@@ -395,7 +417,7 @@ class ModificationClientTests(EmployeConnecteMixin, TestCase):
         response = self.client.get(self.url)
         for valeur in ("Camille Tremblay", "camille@example.com", "418 555-1234"):
             self.assertContains(response, f'value="{valeur}"')
-        self.assertNotContains(response, 'name="nombre_cafes_achetes"')
+        self.assertContains(response, 'name="nombre_cafes_achetes"')
 
     def test_modification_sans_creer_de_client_ni_modifier_les_cafes(self):
         for contact in (
@@ -405,11 +427,12 @@ class ModificationClientTests(EmployeConnecteMixin, TestCase):
         ):
             with self.subTest(contact=contact):
                 response = self.client.post(self.url, {
-                    "nom_complet": "Camille Roy", "nombre_cafes_achetes": "999",
+                    "nom_complet": "Camille Roy", "nombre_cafes_achetes": "7",
+                    "nombre_cafes_prepayes": "0", "nombre_cafes_gratuits": "0",
+                    "_save": "Enregistrer",
                     **contact,
                 }, follow=True)
-                self.assertRedirects(response, reverse("accueil"))
-                self.assertContains(response, "Le client a été modifié avec succès.")
+                self.assertRedirects(response, reverse("admin:CafeDolbeau_client_changelist"))
                 self.personne.refresh_from_db()
                 self.assertEqual(self.personne.nom_complet, "Camille Roy")
                 self.assertEqual(self.personne.courriel, contact["courriel"])
@@ -424,18 +447,21 @@ class ModificationClientTests(EmployeConnecteMixin, TestCase):
             {"nom_complet": "", "telephone": "418 555-1234"},
         ):
             with self.subTest(champs=champs):
-                response = self.client.post(self.url, champs)
+                response = self.client.post(self.url, {
+                    "nombre_cafes_achetes": "7", "nombre_cafes_prepayes": "0",
+                    "nombre_cafes_gratuits": "0", **champs,
+                })
                 self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.context["form"].errors)
+                self.assertTrue(response.context["adminform"].form.errors)
                 self.personne.refresh_from_db()
                 self.assertEqual(self.personne.nom_complet, "Camille Tremblay")
                 self.assertEqual(self.personne.courriel, "camille@example.com")
                 self.assertEqual(self.personne.telephone, "418 555-1234")
 
     def test_client_inexistant(self):
-        url = reverse("modifier_client", args=[self.personne.pk + 1])
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(self.client.post(url, {}).status_code, 404)
+        url = reverse("admin:CafeDolbeau_client_change", args=[self.personne.pk + 1])
+        self.assertRedirects(self.client.get(url), reverse("admin:index"))
+        self.assertRedirects(self.client.post(url, {}), reverse("admin:index"))
 
 
 class ContactsUniquesTests(EmployeConnecteMixin, TestCase):

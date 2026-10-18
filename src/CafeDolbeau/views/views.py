@@ -85,7 +85,11 @@ def ajouter_cafes_client(request, pk):
                 if asynchrone:
                     return JsonResponse({"erreurs": form.errors.get_json_data()}, status=400)
                 return render(request, "ajouter_cafes.html", {
-                    "client": client, "form": formulaires[TransactionCafe.Type.ACHAT],
+                    "client": client, "form": (
+                        formulaires[TransactionCafe.Type.UTILISE]
+                        if formulaires[TransactionCafe.Type.UTILISE].is_bound
+                        else formulaires[TransactionCafe.Type.ACHAT]
+                    ),
                     "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
                     "transactions": historique_client(client, request.user),
                     "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),
@@ -116,7 +120,11 @@ def ajouter_cafes_client(request, pk):
             return JsonResponse({"erreurs": form.errors.get_json_data()}, status=400)
     return render(request, "ajouter_cafes.html", {
         "client": client,
-        "form": formulaires[TransactionCafe.Type.ACHAT],
+        "form": (
+            formulaires[TransactionCafe.Type.UTILISE]
+            if formulaires[TransactionCafe.Type.UTILISE].is_bound
+            else formulaires[TransactionCafe.Type.ACHAT]
+        ),
         "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
         "transactions": historique_client(client, request.user),
         "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),

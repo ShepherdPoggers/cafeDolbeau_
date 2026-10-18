@@ -88,10 +88,11 @@ class AnnulationTests(TestCase):
         self.assertEqual(len({audit.date_annulation for audit in audits}), 1)
         self.assertEqual({audit.transaction_id for audit in audits}, {ligne.pk for ligne in lignes})
 
-    def test_carte_retire_achats_prepayes_et_gratuits(self):
+    def test_annulation_carte_retire_credits_sans_modifier_les_achats(self):
         self.initialiser(7, 4, 3)
         ligne = self.operation(2, "prepaye")[0]
-        self.assertEqual(self.soldes(), (27, 24, 5))
+        self.assertEqual(self.soldes(), (7, 24, 5))
+        self.assertEqual(ligne.variation_achetes, 0)
         annuler_operation(ligne.pk, self.barista)
         self.assertEqual(self.soldes(), (7, 4, 3))
 
@@ -374,7 +375,7 @@ class AnnulationTests(TestCase):
         jeton = self.client.get(self.url(ligne)).context["confirmation"]
         self.operation(2, "prepaye")
         self.client.post(self.url(ligne), {"action": "confirmer", "confirmation": jeton})
-        self.assertEqual(self.soldes(), (20, 20, 2))
+        self.assertEqual(self.soldes(), (0, 20, 2))
 
     def test_administration_vue_filtres_annulation_et_audit_sans_modification(self):
         ligne = self.operation()[0]
@@ -435,7 +436,7 @@ class AnnulationConcurrenceTests(TransactionTestCase):
             lambda: ajouter_cafes(self.personne, 1, "prepaye", employe=self.barista),
         ])
         self.personne.refresh_from_db()
-        self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (19, 10, 1))
+        self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (9, 10, 1))
         self.assertEqual(AnnulationTransaction.objects.count(), 2)
 
     def test_ancienne_operation_completee_et_annulee_une_seule_fois(self):
