@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from django.apps import AppConfig
 from django.contrib.admin.apps import AdminConfig
 
@@ -8,4 +10,8 @@ class CafedolbeauConfig(AppConfig):
 
 
 class AdministrationCafeConfig(AdminConfig):
-    default_site = 'CafeDolbeau.admin_site.AdministrationCafe'
+    default_site = 'CafeDolbeau.admin.admin_site.AdministrationCafe'
+
+    def ready(self):
+        super().ready()
+        import_module('CafeDolbeau.admin.admin')

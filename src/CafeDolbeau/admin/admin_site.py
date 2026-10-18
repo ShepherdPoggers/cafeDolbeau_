@@ -5,7 +5,7 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
 from django.urls import reverse
 
-from .permissions import PERMISSION_GERANT
+from ..permissions import PERMISSION_GERANT
 
 
 class AdministrationCafe(AdminSite):

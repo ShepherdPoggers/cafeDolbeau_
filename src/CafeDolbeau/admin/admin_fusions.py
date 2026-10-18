@@ -9,9 +9,9 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html, format_html_join
 
-from .models import Client, FusionClient
-from .permissions import PERMISSION_GERANT
-from .services import COMPTEURS, annuler_fusion, fusionner_clients, soldes_clients, verifier_fusion_possible
+from ..models import Client, FusionClient
+from ..permissions import PERMISSION_GERANT
+from ..services import COMPTEURS, annuler_fusion, fusionner_clients, soldes_clients, verifier_fusion_possible
 
 
 class DestinationFusionForm(forms.Form):

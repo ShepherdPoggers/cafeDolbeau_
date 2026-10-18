@@ -11,11 +11,11 @@ from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .forms.forms import CreationEmployeForm, ModificationEmployeForm, ParametresCafeForm
-from .models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
+from ..forms.forms import CreationEmployeForm, ModificationEmployeForm, ParametresCafeForm
+from ..models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
 from .admin_fusions import confirmer_fusion
-from .permissions import PERMISSION_GERANT
-from .services import COMPTEURS, _avec_client_verrouille, soldes_clients, supprimer_clients
+from ..permissions import PERMISSION_GERANT
+from ..services import COMPTEURS, _avec_client_verrouille, soldes_clients, supprimer_clients
 
 
 admin.site.site_header = "Administration Café Dolbeau"

@@ -194,7 +194,7 @@ class SuppressionClientTests(TestCase):
             Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_prepayes=7)
             return supprimer_clients(ids, **kwargs)
 
-        with patch("CafeDolbeau.admin.supprimer_clients", side_effect=modifier_avant_service):
+        with patch("CafeDolbeau.admin.admin.supprimer_clients", side_effect=modifier_avant_service):
             response = self.client.post(self.url, {"post": "yes", "confirmation": jeton})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.context["clients"][0].nombre_cafes_prepayes, 7)

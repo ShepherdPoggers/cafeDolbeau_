@@ -24,4 +24,4 @@ Cette décision a été écartée pour les raisons suivantes :
 ## Conséquences
 Cette décision ajoute des vérifications supplémentaires puisqu'on doit valider si le barista connecté est la source de la transaction. 
 
-Il y a peu de risques que l'employé fuck le chien puisqu'il ne peut qu'annuler les transactions qu'il a faites récemment. Par ailleurs, une trace des annulations est conservée dans une table de la BD, ce qui facilite la réparation d'une plus grosse erreur. 
+Il y a peu de risques d'abus volontaire est limité, puisque le barista ne peut qu'annuler les transactions qu'il a faites récemment. Par ailleurs, une trace des annulations est conservée dans une table de la BD, ce qui facilite la réparation d'une plus grosse erreur. 
