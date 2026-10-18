@@ -68,6 +68,35 @@ python src/manage.py balances
 
 Comparer les soldes affichés avec ceux du script : ils doivent être identiques au tableau ci-dessous. Le même fichier `src/db.sqlite3` est conservé et aucune donnée n’est rechargée. Après la migration, utiliser `admin_test` pour attribuer les rôles Barista ou Gérant aux autres comptes.
 
+## Charger les données avec uniquement le code V1
+
+Le correcteur qui a téléchargé directement la V1 peut charger le jeu de données de `donnees_v1.py` **sans installer ni exécuter la V2**. Le fichier doit lui être fourni séparément ou être joint à l'archive V1 ; un ancien tag ne contient pas automatiquement ce script ajouté ultérieurement.
+
+Copier uniquement `donnees_v1.py` dans un dossier `scripts` à la racine du projet V1, au même niveau que `src`. La fonction `creer_donnees` est autonome : son import ne lance pas le script et ne nécessite pas `_donnees_test.py`. Elle utilise les modèles V1 de l'application déjà chargée par Django.
+
+Arrêter le serveur, préparer l'environnement et installer les dépendances de la V1 selon son README. Utiliser une copie de travail V1 avec une base neuve : sauvegarder et déplacer tout fichier `src/db.sqlite3` existant avant de continuer. Le chargement ci-dessous utilise des identifiants fixes et doit être effectué une seule fois sur une base sans clients ni transactions.
+
+Depuis la racine de cette copie V1, dans PowerShell :
+
+```powershell
+# Créer les tables avec les migrations disponibles dans la V1.
+.\.venv\Scripts\python.exe src/manage.py migrate
+
+# Charger les 6 clients et les 12 transactions dans une transaction atomique.
+.\.venv\Scripts\python.exe src/manage.py shell -c "import sys; sys.path.insert(0, 'scripts'); from donnees_v1 import creer_donnees; from django.apps import apps; from django.db import transaction; transaction.atomic()(creer_donnees)(apps)"
+
+# Facultatif : créer un compte pour consulter l'administration V1.
+.\.venv\Scripts\python.exe src/manage.py createsuperuser
+
+.\.venv\Scripts\python.exe src/manage.py runserver
+```
+
+Cette méthode charge uniquement les clients et les transactions ; elle ne crée pas les comptes de démonstration. Le compte d'administration et son mot de passe sont ceux choisis avec `createsuperuser`. Sous un autre système, remplacer `.\.venv\Scripts\python.exe` par l'interpréteur de l'environnement virtuel activé.
+
+Ne pas lancer directement `python scripts/donnees_v1.py --database ...` dans cette procédure : ce point d'entrée dépend du fichier auxiliaire et du réglage `CAFE_DB_PATH` de la V2. Le passage par `manage.py shell` utilise la configuration de base de données propre à la V1.
+
+Les soldes attendus figurent dans le tableau ci-dessous. Pour tester ensuite la mise à jour, arrêter le serveur et suivre la section « Mettre à jour une base existante » en conservant cette base.
+
 ## Résultat de notre vérification
 
 Essai effectué le 18 octobre 2026 : base créée au schéma V1 avec `scripts/donnees_v1.py`, puis migrations V2 appliquées sur ce même fichier SQLite. Les migrations `0009` à `0016` et `check` ont réussi. Les achats cumulés, récompenses et prépayés sont identiques pour les 6 clients ; les étampes calculées le sont également.
