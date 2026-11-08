@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté 
 - **Date :** 2026-10-10
-- **Demande concernée :** §3.4
+- **Demande concernée :** §2.3.4
 
 ## Contexte
 Pour des questions de conformité juridique, notre patron nous demande de rendre possible la suppression des informations personnelles d'un client. Nous devons choisir si le client sera anonymisé ou complètement supprimé. 

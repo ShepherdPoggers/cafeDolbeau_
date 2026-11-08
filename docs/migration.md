@@ -1,5 +1,22 @@
 # Migrer les données de la V1 vers la V2
 
+## Ajouter les succursales à une installation existante
+
+Après avoir arrêté le serveur et sauvegardé la base utilisée par l’application, appliquer la mise à jour depuis la racine du dépôt, avec l’environnement virtuel activé :
+
+```bash
+python src/manage.py migrate
+python src/manage.py check
+```
+
+La migration `0017_succursales` crée la succursale d’identifiant `1`, nommée « Succursale #1 », et lui associe toutes les transactions existantes, y compris les transactions annulées et celles des clients supprimés. Les dates, les quantités et les soldes des clients sont conservés. Cette migration fonctionne avec PostgreSQL et SQLite; elle s’applique aussi automatiquement aux installations neuves.
+
+Les nouvelles opérations saisies dans les formulaires actuels utilisent la succursale nº 1. La fidélité reste commune à toutes les succursales. Le service `ajouter_cafes` accepte un paramètre facultatif `succursale_id` pour attribuer toutes les lignes d’une opération à une autre succursale existante.
+
+Les superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants conservent la consultation des transactions, sans accès à la gestion des succursales.
+
+Avant un transfert de SQLite vers PostgreSQL, appliquer également cette migration à la source SQLite. Le transfert conserve les succursales et leurs liens avec les transactions.
+
 ## Conservation des données
 
 Les migrations V1 `0001` à `0008` sont identiques à celles des tags existants, dont `v1.0.0.4`. La V2 applique ensuite les migrations `0009` à `0016` sans supprimer les clients ni recalculer leurs soldes.

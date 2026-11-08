@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté
 - **Date :** 2026-10-09
-- **Demande concernée :** §3.2
+- **Demande concernée :** §2.3.2
 
 ## Contexte
 

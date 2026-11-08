@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté      
 - **Date :** 2026-10-08
-- **Demande concernée :** §3.1
+- **Demande concernée :** §2.3.1
 
 ## Contexte
 Le patron nous a demandé d'ajouter une fonction pour annuler les transactions.

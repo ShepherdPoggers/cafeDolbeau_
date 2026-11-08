@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté
 - **Date :** 2026-10-10
-- **Demande concernée :** §3.5
+- **Demande concernée :** §2.3.5
 
 ## Contexte
 Un client peut avoir fait deux comptes et veut maintenant les fusionner. Il faut déterminer :

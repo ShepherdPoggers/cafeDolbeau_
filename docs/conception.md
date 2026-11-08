@@ -2,25 +2,28 @@
 
 ## Table des matières
 
-- [Implémentation](#implémentation)
-  - [Structure du projet](#structure-du-projet)
-  - [Clients](#clients)
-    - [Suppression d'un client](#suppression-dun-client)
-    - [Fusion de deux clients](#fusion-de-deux-clients)
-  - [Achat d'articles](#achat-darticles)
-    - [Onzième café gratuit et cartes prépayées](#onzième-café-gratuit-et-cartes-prépayées)
-      - [Calcul des cafés gratuits](#calcul-des-cafés-gratuits)
-      - [Explication de la logique](#explication-de-la-logique)
-        - [Tableau explicatif](#tableau-explicatif)
-      - [Consommation](#consommation)
-    - [Annuler une transaction](#annuler-une-transaction)
-  - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
-  - [Création des rapports](#création-des-rapports)
-  - [Gestion des permissions](#gestion-des-permissions)
-  - [Choix techniques](#choix-techniques)
-    - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
-    - [Cohérence des données](#cohérence-des-données)
-    - [Migration des données](#migration-des-données)
+- [Conception Café Dolbeau](#conception-café-dolbeau)
+  - [Table des matières](#table-des-matières)
+  - [Implémentation](#implémentation)
+    - [Structure du projet](#structure-du-projet)
+    - [Clients](#clients)
+      - [Suppression d'un client](#suppression-dun-client)
+      - [Fusion de deux clients](#fusion-de-deux-clients)
+    - [Achat d'articles](#achat-darticles)
+      - [Onzième café gratuit et cartes prépayées](#onzième-café-gratuit-et-cartes-prépayées)
+        - [Calcul des cafés gratuits](#calcul-des-cafés-gratuits)
+        - [Explication de la logique](#explication-de-la-logique)
+          - [Tableau explicatif](#tableau-explicatif)
+        - [Consommation](#consommation)
+      - [Annuler une transaction](#annuler-une-transaction)
+    - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
+    - [Création des rapports](#création-des-rapports)
+    - [Gestion des permissions](#gestion-des-permissions)
+    - [Choix techniques](#choix-techniques)
+      - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
+      - [Cohérence des données](#cohérence-des-données)
+      - [Migration des données](#migration-des-données)
+        - [Titre temporaire](#titre-temporaire)
 
 ## Implémentation
 
@@ -245,3 +248,24 @@ Les opérations qui modifient plusieurs données utilisent la fonction `_avec_cl
 #### Migration des données
 
 Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### Titre temporaire
+| Fonction | Propriétaire | Gérant | Barista |
+|---|---|---|---|
+| Dix dernières transactions d’un client | Tout le réseau | Tout le réseau | Tout le réseau |
+| Enregistrer une opération | Toute succursale | Ses succursales | Ses succursales |
+| Annuler une transaction | Tout le réseau | Ses succursales | Ses propres transactions récentes, dans la succursale de l’URL |
+| Liste des transactions dans l’administration | Tout le réseau | Ses succursales | Aucun accès |
+| Rapports et exports, provisoirement | Autorisés | Refusés | Refusés |

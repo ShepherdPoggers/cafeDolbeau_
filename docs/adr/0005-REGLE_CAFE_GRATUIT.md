@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté
 - **Date :** 2026-10-09
-- **Demande concernée :** §3.3
+- **Demande concernée :** §2.3.3
 
 ## Contexte
 Le patron veut pouvoir changer après combien de cafés un client reçoit un café gratuit. Il faut définir comment traiter les cafés déjà accumulés avant le changement. 

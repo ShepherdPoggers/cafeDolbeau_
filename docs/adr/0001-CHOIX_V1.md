@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté  
 - **Date :** 2026-10-08
-- **Demande concernée :** §2
+- **Demande concernée :** §2.2
 
 ## Contexte
 Suite à l'analyse des nouvelles demandes du patron, nous avons dû réexaminer notre choix de la V1. 

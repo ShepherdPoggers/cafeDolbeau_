@@ -2,7 +2,7 @@
 
 - **Statut :** Accepté
 - **Date :** 2026-10-08
-- **Demande concernée :** §3.6
+- **Demande concernée :** §2.3.6
 
 ## Contexte
 À la demande du patron, nous devons ajouter des permissions pour restreindre les accès.
