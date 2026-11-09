@@ -17,7 +17,7 @@
 
     <section aria-labelledby="titre-recherche">
         <h2 id="titre-recherche">Rechercher un client</h2>
-        <form method="get" action="{% url 'accueil' %}" role="search" id="form-recherche">
+        <form method="get" action="{% url 'accueil_succursale' request.succursale.pk %}" role="search" id="form-recherche">
             <label for="recherche">Nom, téléphone ou courriel</label>
             <div class="search-field">
                 <input type="search" id="recherche" name="q" value="{{ recherche }}"
@@ -34,7 +34,7 @@
 
     <h2>Ajouter un client</h2>
     <p>Renseignez au moins un moyen de contact : courriel ou téléphone.</p>
-    <form method="post" action="{% url 'accueil' %}">
+    <form method="post" action="{% url 'accueil_succursale' request.succursale.pk %}">
         {% csrf_token %}
         {{ form.as_p }}
         <button type="submit">Ajouter le client</button>

@@ -9,7 +9,7 @@ from django.db.models.deletion import ProtectedError
 from django.test import Client as Navigateur, TestCase, TransactionTestCase
 from django.urls import reverse
 
-from ..models import AnnulationTransaction, Client, Employe, TransactionCafe
+from ..models import AffectationEmployeSuccursale, AnnulationTransaction, Client, Employe, Succursale, TransactionCafe
 from ..permissions import PERMISSION_BASE, PERMISSION_GERANT
 from ..services import ajouter_cafes, annuler_operation, preparer_annulation
 
@@ -17,9 +17,15 @@ from ..services import ajouter_cafes, annuler_operation, preparer_annulation
 def creer_employe(username, role="Barista"):
     employe = Employe.objects.create_user(username)
     groupe, _ = Group.objects.get_or_create(name=role)
-    codes = ["acces_base", "acces_gerant"] if role == "Gérant" else ["acces_base"]
+    codes = ["acces_base"]
+    if role in ("Gérant", "Propriétaire"):
+        codes.append("acces_gerant")
+    if role == "Propriétaire":
+        codes.append("acces_proprietaire")
     groupe.permissions.add(*Permission.objects.filter(content_type__app_label="CafeDolbeau", codename__in=codes))
     employe.groups.add(groupe)
+    Succursale.objects.get_or_create(pk=1, defaults={"nom": "Succursale #1"})
+    AffectationEmployeSuccursale.objects.get_or_create(employe_id=employe.pk, succursale_id=1)
     return employe
 
 
@@ -46,10 +52,10 @@ class AnnulationTests(TestCase):
         )
 
     def operation(self, quantite=1, type_transaction="achat", employe=None):
-        return ajouter_cafes(self.personne, quantite, type_transaction, employe=employe or self.barista)
+        return ajouter_cafes(self.personne, quantite, type_transaction, employe=employe or self.barista, succursale_id=1)
 
     def url(self, ligne, admin=False):
-        url = reverse("annuler_transaction", args=[ligne.client_id, ligne.pk])
+        url = reverse("annuler_transaction", args=[1, ligne.client_id, ligne.pk])
         return url + "?origine=admin" if admin else url
 
     def confirmer(self, ligne, admin=False):
@@ -80,7 +86,7 @@ class AnnulationTests(TestCase):
         self.assertEqual(len({ligne.operation_id for ligne in lignes}), 1)
         self.assertEqual({ligne.employe_id for ligne in lignes}, {self.barista.pk})
         self.assertEqual(self.soldes(), (10, 0, 1))
-        self.assertEqual(annuler_operation(lignes[0].pk, self.barista), 2)
+        self.assertEqual(annuler_operation(lignes[0].pk, self.barista, succursale_id=1), 2)
         self.assertEqual(self.soldes(), (9, 0, 0))
         self.assertEqual(TransactionCafe.objects.count(), 2)
         audits = list(AnnulationTransaction.objects.all())
@@ -93,7 +99,7 @@ class AnnulationTests(TestCase):
         ligne = self.operation(2, "prepaye")[0]
         self.assertEqual(self.soldes(), (7, 24, 5))
         self.assertEqual(ligne.variation_achetes, 0)
-        annuler_operation(ligne.pk, self.barista)
+        annuler_operation(ligne.pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (7, 4, 3))
 
     def test_consommation_mixte_restitue_exactement_les_soldes(self):
@@ -102,14 +108,14 @@ class AnnulationTests(TestCase):
         self.assertEqual(self.soldes(), (11, 0, 1))
         consommation = next(ligne for ligne in lignes if ligne.type_transaction == "utilise")
         self.assertEqual((consommation.variation_prepayes, consommation.variation_gratuits), (-2, -1))
-        annuler_operation(consommation.pk, self.barista)
+        annuler_operation(consommation.pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (9, 2, 1))
         self.assertEqual(AnnulationTransaction.objects.count(), 3)
 
     def test_plancher_zero_et_pas_de_recalcul_des_operations_suivantes(self):
         ligne = self.operation(2, "prepaye")[0]
         suivantes = self.operation(25, "utilise")
-        annuler_operation(ligne.pk, self.barista)
+        annuler_operation(ligne.pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (3, 0, 0))
         self.assertTrue(all(not TransactionCafe.objects.get(pk=source.pk).annulee for source in suivantes))
 
@@ -117,21 +123,21 @@ class AnnulationTests(TestCase):
         self.initialiser(9, 0, 1)
         lignes = self.operation(2, "utilise")
         self.initialiser(10, 0, 0)
-        annuler_operation(lignes[0].pk, self.barista)
+        annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (9, 0, 0))
 
     def test_gerant_peut_annuler_un_autre_auteur_barista_non(self):
         ligne = self.operation()[0]
         with self.assertRaises(PermissionDenied):
-            annuler_operation(ligne.pk, self.autre)
+            annuler_operation(ligne.pk, self.autre, succursale_id=1)
         self.assertEqual(self.soldes(), (1, 0, 0))
-        annuler_operation(ligne.pk, self.gerant)
+        annuler_operation(ligne.pk, self.gerant, succursale_id=1)
         self.assertEqual(AnnulationTransaction.objects.get().employe_id, self.gerant.pk)
 
     def test_double_annulation_ne_modifie_pas_les_soldes_ni_audits(self):
         ligne = self.operation()[0]
-        self.assertEqual(annuler_operation(ligne.pk, self.barista), 1)
-        self.assertEqual(annuler_operation(ligne.pk, self.barista), 0)
+        self.assertEqual(annuler_operation(ligne.pk, self.barista, succursale_id=1), 1)
+        self.assertEqual(annuler_operation(ligne.pk, self.barista, succursale_id=1), 0)
         self.assertEqual(self.soldes(), (0, 0, 0))
         self.assertEqual(AnnulationTransaction.objects.count(), 1)
         with self.assertRaises(IntegrityError), transaction.atomic():
@@ -142,7 +148,7 @@ class AnnulationTests(TestCase):
         self.assertTrue(self.barista.has_perm(PERMISSION_BASE))
         self.barista.groups.clear()
         with self.assertRaises(PermissionDenied):
-            annuler_operation(ligne.pk, self.barista)
+            annuler_operation(ligne.pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (1, 0, 0))
 
     def test_echec_audit_annule_toutes_les_ecritures(self):
@@ -160,13 +166,13 @@ class AnnulationTests(TestCase):
 
         with patch.object(AnnulationTransaction, "save", echouer):
             with self.assertRaises(RuntimeError):
-                annuler_operation(lignes[0].pk, self.barista)
+                annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
         self.assertEqual(self.soldes(), (10, 0, 1))
         self.assertFalse(AnnulationTransaction.objects.exists())
 
     def test_protection_des_transactions_et_des_employes_references(self):
         ligne = self.operation()[0]
-        annuler_operation(ligne.pk, self.gerant)
+        annuler_operation(ligne.pk, self.gerant, succursale_id=1)
         for objet in (ligne, self.barista, self.gerant):
             with self.subTest(objet=objet):
                 with self.assertRaises(ProtectedError):
@@ -175,23 +181,23 @@ class AnnulationTests(TestCase):
     def test_historique_dix_lignes_boutons_et_statut(self):
         for _ in range(12):
             self.operation()
-        response = self.client.get(reverse("ajouter_cafes", args=[self.personne.pk]))
+        response = self.client.get(reverse("ajouter_cafes", args=[1, self.personne.pk]))
         self.assertEqual(len(response.context["transactions"]), 10)
         lignes = response.context["transactions"]
         self.assertEqual([ligne.pk for ligne in lignes], sorted((ligne.pk for ligne in lignes), reverse=True))
         self.assertTrue(all(ligne.annulation_disponible for ligne in lignes))
         self.assertContains(response, "Employé : barista")
         self.assertContains(response, "<small>Active</small>", count=10, html=True)
-        annuler_operation(lignes[0].pk, self.barista)
-        response = self.client.get(reverse("ajouter_cafes", args=[self.personne.pk]))
+        annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
+        response = self.client.get(reverse("ajouter_cafes", args=[1, self.personne.pk]))
         self.assertContains(response, "Annulée le")
         self.assertFalse(response.context["transactions"][0].annulation_disponible)
         self.client.force_login(self.autre)
-        response = self.client.get(reverse("ajouter_cafes", args=[self.personne.pk]))
+        response = self.client.get(reverse("ajouter_cafes", args=[1, self.personne.pk]))
         self.assertFalse(any(ligne.annulation_disponible for ligne in response.context["transactions"]))
         self.assertContains(response, " disabled title=")
         self.client.force_login(self.gerant)
-        response = self.client.get(reverse("ajouter_cafes", args=[self.personne.pk]))
+        response = self.client.get(reverse("ajouter_cafes", args=[1, self.personne.pk]))
         self.assertTrue(all(ligne.annulation_disponible for ligne in response.context["transactions"][1:]))
 
     def test_operation_annulee_meme_si_une_ligne_est_hors_des_dix(self):
@@ -199,16 +205,16 @@ class AnnulationTests(TestCase):
         lignes = self.operation()
         for _ in range(9):
             self.operation(1, "prepaye")
-        response = self.client.get(reverse("ajouter_cafes", args=[self.personne.pk]))
+        response = self.client.get(reverse("ajouter_cafes", args=[1, self.personne.pk]))
         visibles = {ligne.pk for ligne in response.context["transactions"]}
         self.assertEqual(len(visibles & {ligne.pk for ligne in lignes}), 1)
-        annuler_operation(next(pk for pk in visibles if pk in {ligne.pk for ligne in lignes}), self.barista)
+        annuler_operation(next(pk for pk in visibles if pk in {ligne.pk for ligne in lignes}), self.barista, succursale_id=1)
         self.assertTrue(all(TransactionCafe.objects.get(pk=ligne.pk).annulee for ligne in lignes))
 
     def test_ajax_auteur_fourni_par_session_et_historique_dix_lignes(self):
         for _ in range(11):
             self.operation(1, "prepaye")
-        response = self.client.post(reverse("ajouter_cafes", args=[self.personne.pk]), {
+        response = self.client.post(reverse("ajouter_cafes", args=[1, self.personne.pk]), {
             "quantite": 1, "type_transaction": "achat", "employe": self.autre.pk,
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
@@ -225,7 +231,7 @@ class AnnulationTests(TestCase):
         self.assertFalse(AnnulationTransaction.objects.exists())
         self.assertEqual(self.client.post(self.url(ligne), {"action": "confirmer"}).status_code, 400)
         self.assertFalse(AnnulationTransaction.objects.exists())
-        self.assertRedirects(self.confirmer(ligne), reverse("ajouter_cafes", args=[self.personne.pk]))
+        self.assertRedirects(self.confirmer(ligne), reverse("ajouter_cafes", args=[1, self.personne.pk]))
         self.assertEqual(self.soldes(), (0, 0, 0))
 
     def test_confirmation_non_transferable_et_retrait_permissions(self):
@@ -256,7 +262,7 @@ class AnnulationTests(TestCase):
         navigateur.force_login(self.autre)
         self.assertEqual(navigateur.get(self.url(ligne)).status_code, 403)
         navigateur.force_login(self.barista)
-        self.assertEqual(navigateur.get(reverse("annuler_transaction", args=[self.autre_client.pk, ligne.pk])).status_code, 404)
+        self.assertEqual(navigateur.get(reverse("annuler_transaction", args=[1, self.autre_client.pk, ligne.pk])).status_code, 404)
         navigateur = Navigateur(enforce_csrf_checks=True)
         navigateur.force_login(self.barista)
         jeton = navigateur.get(self.url(ligne)).context["confirmation"]
@@ -301,15 +307,15 @@ class AnnulationTests(TestCase):
         autre_client = self.ancienne(client=self.autre_client)
         nouvelle = self.operation()[0]
         annulee = self.ancienne()
-        annuler_operation(annulee.pk, self.gerant, {annulee.pk: (1, 0, 0)})
+        annuler_operation(annulee.pk, self.gerant, {annulee.pk: (1, 0, 0)}, succursale_id=1)
         self.client.force_login(self.gerant)
         for ids in ([autre_client.pk], [source.pk, autre_client.pk], [source.pk, nouvelle.pk], [source.pk, annulee.pk]):
             response = self.client.post(self.url(source), {"action": "completer", "lignes": ids})
             self.assertTrue(response.context["selection"].errors)
         with self.assertRaises(ValidationError):
-            annuler_operation(source.pk, self.gerant)
+            annuler_operation(source.pk, self.gerant, succursale_id=1)
         with self.assertRaises(ValidationError):
-            annuler_operation(source.pk, self.gerant, {source.pk: (-1, 0, 0)})
+            annuler_operation(source.pk, self.gerant, {source.pk: (-1, 0, 0)}, succursale_id=1)
         consommation = self.ancienne("utilise")
         response = self.client.post(self.url(consommation), self.donnees_effets([consommation], [(0, 1, 0)]))
         self.assertTrue(response.context["effets"].errors[0])
@@ -320,7 +326,7 @@ class AnnulationTests(TestCase):
         source = self.ancienne()
         with patch.object(AnnulationTransaction, "save", side_effect=RuntimeError("échec")):
             with self.assertRaises(RuntimeError):
-                annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0)})
+                annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0)}, succursale_id=1)
         source.refresh_from_db()
         self.assertIsNone(source.operation_id)
         self.assertIsNone(source.variation_achetes)
@@ -361,7 +367,7 @@ class AnnulationTests(TestCase):
         self.client.force_login(self.gerant)
         response = self.client.post(self.url(source), self.donnees_effets([source, autre], [(1, 0, 0), (1, 0, 0)]))
         jeton = response.context["confirmation"]
-        annuler_operation(autre.pk, self.gerant, {autre.pk: (1, 0, 0)})
+        annuler_operation(autre.pk, self.gerant, {autre.pk: (1, 0, 0)}, succursale_id=1)
         response = self.client.post(self.url(source), {"action": "confirmer", "confirmation": jeton})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.soldes(), (9, 0, 0))
@@ -399,6 +405,7 @@ class AnnulationTests(TestCase):
 
 class AnnulationConcurrenceTests(TransactionTestCase):
     def setUp(self):
+        Succursale.objects.get_or_create(pk=1, defaults={"nom": "Succursale #1"})
         self.barista = creer_employe("barista-concurrent")
         self.personne = Client.objects.create(nom_complet="Camille", telephone="418 555-1111", nombre_cafes_achetes=9)
 
@@ -418,10 +425,10 @@ class AnnulationConcurrenceTests(TransactionTestCase):
         return resultats
 
     def test_deux_annulations_simultanees_une_seule_inversion(self):
-        lignes = ajouter_cafes(self.personne, 1, employe=self.barista)
+        lignes = ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)
         resultat = self.simultanement([
-            lambda: annuler_operation(lignes[0].pk, self.barista),
-            lambda: annuler_operation(lignes[1].pk, self.barista),
+            lambda: annuler_operation(lignes[0].pk, self.barista, succursale_id=1),
+            lambda: annuler_operation(lignes[1].pk, self.barista, succursale_id=1),
         ])
         self.assertEqual(sorted(resultat), [0, 2])
         self.personne.refresh_from_db()
@@ -430,10 +437,10 @@ class AnnulationConcurrenceTests(TransactionTestCase):
         self.assertEqual(AnnulationTransaction.objects.count(), 2)
 
     def test_ajout_et_annulation_simultanes_preservent_les_deux_operations(self):
-        ligne = ajouter_cafes(self.personne, 1, employe=self.barista)[0]
+        ligne = ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)[0]
         self.simultanement([
-            lambda: annuler_operation(ligne.pk, self.barista),
-            lambda: ajouter_cafes(self.personne, 1, "prepaye", employe=self.barista),
+            lambda: annuler_operation(ligne.pk, self.barista, succursale_id=1),
+            lambda: ajouter_cafes(self.personne, 1, "prepaye", employe=self.barista, succursale_id=1),
         ])
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (9, 10, 1))
@@ -446,8 +453,8 @@ class AnnulationConcurrenceTests(TransactionTestCase):
         gratuit = TransactionCafe.objects.create(client=self.personne, quantite=1, type_transaction="gratuit")
         effets = {achat.pk: (1, 0, 0), gratuit.pk: (0, 0, 1)}
         resultat = self.simultanement([
-            lambda: annuler_operation(achat.pk, gerant, effets),
-            lambda: annuler_operation(gratuit.pk, gerant, effets),
+            lambda: annuler_operation(achat.pk, gerant, effets, succursale_id=1),
+            lambda: annuler_operation(gratuit.pk, gerant, effets, succursale_id=1),
         ])
         self.assertEqual(sorted(resultat), [0, 2])
         achat.refresh_from_db()

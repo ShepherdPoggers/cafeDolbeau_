@@ -19,7 +19,7 @@
                 <td><span class="cell-text" title="{{ client.nombre_cafes_gratuits }}">{{ client.nombre_cafes_gratuits }}</span></td>
                 <td>
                     <div class="row-actions">
-                    <form method="get" action="{% url 'ajouter_cafes' client.pk %}">
+                    <form method="get" action="{% url 'ajouter_cafes' request.succursale.pk client.pk %}">
                         <button type="submit" aria-label="Ajouter des cafés pour {{ client.nom_complet }}">Ajouter des cafés</button>
                     </form>
                     </div>

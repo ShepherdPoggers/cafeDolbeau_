@@ -18,6 +18,7 @@ class Employe(User):
         permissions = [
             ("acces_base", "Accéder aux fonctions de base du café"),
             ("acces_gerant", "Accéder aux fonctions de gérant du café"),
+            ("acces_proprietaire", "Accéder à toutes les succursales et gérer les employés"),
         ]
 
 
@@ -75,6 +76,38 @@ class ParametresCafe(models.Model):
 
     def __str__(self):
         return "Paramètres du café"
+
+
+class Succursale(models.Model):
+    nom = models.CharField("nom", max_length=200)
+
+    class Meta:
+        verbose_name = "succursale"
+        verbose_name_plural = "succursales"
+        ordering = ["pk"]
+
+    def __str__(self):
+        return self.nom
+
+
+class AffectationEmployeSuccursale(models.Model):
+    employe = models.ForeignKey(
+        Employe, on_delete=models.CASCADE, related_name="affectations_succursales",
+        verbose_name="employé",
+    )
+    succursale = models.ForeignKey(
+        Succursale, on_delete=models.CASCADE, related_name="affectations_employes",
+    )
+
+    class Meta:
+        verbose_name = "affectation à une succursale"
+        verbose_name_plural = "affectations aux succursales"
+        constraints = [models.UniqueConstraint(
+            fields=["employe", "succursale"], name="affectation_employe_succursale_unique",
+        )]
+
+    def __str__(self):
+        return f"{self.employe} — {self.succursale}"
 
 
 class Client(models.Model):
@@ -146,6 +179,10 @@ class TransactionCafe(models.Model):
     )
     client = models.ForeignKey(
         Client, on_delete=models.PROTECT, related_name="transactions_cafe"
+    )
+    succursale = models.ForeignKey(
+        Succursale, on_delete=models.PROTECT, default=1,
+        related_name="transactions_cafe", verbose_name="succursale",
     )
     client_origine_id = models.BigIntegerField(
         "identifiant du client d'origine", null=True, blank=True, editable=False,

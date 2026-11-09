@@ -16,7 +16,7 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from ..forms.forms_annulation import SelectionAnciennesForm
-from ..models import AnnulationTransaction, Client, Employe, FusionClient, TransactionCafe
+from ..models import AnnulationTransaction, Client, Employe, FusionClient, Succursale, TransactionCafe
 from ..permissions import peut_annuler
 from ..rapports import exporter_excel, generer_rapport
 from ..services import COMPTEURS, ajouter_cafes, annuler_fusion, annuler_operation, fusionner_clients, supprimer_clients
@@ -54,7 +54,7 @@ class FusionClientTests(TestCase):
         )
 
     def acheter(self, personne=None, quantite=1, type_cafe="achat"):
-        return ajouter_cafes(personne or self.destination, quantite, type_cafe, employe=self.barista)
+        return ajouter_cafes(personne or self.destination, quantite, type_cafe, employe=self.barista, succursale_id=1)
 
     def ancienne(self, personne=None, origine=None):
         return TransactionCafe.objects.create(
@@ -93,7 +93,7 @@ class FusionClientTests(TestCase):
 
     def test_retour_arriere_exact_provenances_et_annulations_incluses(self):
         annulee = self.acheter(self.source)[0]
-        annuler_operation(annulee.pk, self.gerant)
+        annuler_operation(annulee.pk, self.gerant, succursale_id=1)
         self.ancienne(origine=12345)
         self.ancienne()
         self.ancienne(self.destination)
@@ -145,7 +145,7 @@ class FusionClientTests(TestCase):
         fusion.refresh_from_db()
         self.assertEqual(fusion.statut, FusionClient.Statut.EN_ATTENTE)
         lignes = self.acheter()
-        annuler_operation(lignes[0].pk, self.gerant)
+        annuler_operation(lignes[0].pk, self.gerant, succursale_id=1)
         fusion.refresh_from_db()
         self.assertEqual(fusion.statut, FusionClient.Statut.FINALISEE)
         self.assertFalse(Client.objects.filter(pk=self.source.pk).exists())
@@ -180,7 +180,7 @@ class FusionClientTests(TestCase):
             reponse = self.client.get(url)
             self.assertContains(reponse, "Camille corrigé")
             self.assertContains(reponse, "Alex corrigé")
-        self.assertContains(self.client.get(reverse("ajouter_cafes", args=[self.destination.pk])), "Camille corrigé")
+        self.assertContains(self.client.get(reverse("ajouter_cafes", args=[1, self.destination.pk])), "Camille corrigé")
 
     def test_suppression_participant_fusion_annulee_conserve_historique(self):
         for personne, champ, autre_champ, autre_id in (
@@ -257,9 +257,9 @@ class FusionClientTests(TestCase):
         ligne = self.acheter(self.source)[0]
         self.fusionner()
         ligne.refresh_from_db()
-        self.assertFalse(peut_annuler(ligne, self.gerant))
+        self.assertFalse(peut_annuler(ligne, self.gerant, succursale_id=1))
         with self.assertRaises(ValidationError):
-            annuler_operation(ligne.pk, self.gerant)
+            annuler_operation(ligne.pk, self.gerant, succursale_id=1)
         with self.assertRaises(ValidationError):
             self.acheter(self.source)
         for personne in (self.source, self.destination):
@@ -285,7 +285,7 @@ class FusionClientTests(TestCase):
         self.assertEqual(len(deplacees), 2)
         self.fusionner()
         nouvelles = self.acheter()
-        self.assertEqual(annuler_operation(deplacees[0].pk, self.gerant), 2)
+        self.assertEqual(annuler_operation(deplacees[0].pk, self.gerant, succursale_id=1), 2)
         self.assertEqual(set(AnnulationTransaction.objects.values_list("transaction_id", flat=True)), {ligne.pk for ligne in deplacees})
         self.assertFalse(AnnulationTransaction.objects.filter(transaction_id__in=[ligne.pk for ligne in nouvelles]).exists())
 
@@ -324,13 +324,13 @@ class FusionClientTests(TestCase):
         self.fusionner()
         self.acheter()
         source.refresh_from_db()
-        form = SelectionAnciennesForm(client=self.destination, source=source)
+        form = SelectionAnciennesForm(client=self.destination, source=source, employe=self.gerant)
         self.assertEqual(set(form.fields["lignes"].queryset.values_list("pk", flat=True)), {source.pk})
-        avec_melange = SelectionAnciennesForm({"lignes": [source.pk, destination.pk]}, client=self.destination, source=source)
+        avec_melange = SelectionAnciennesForm({"lignes": [source.pk, destination.pk]}, client=self.destination, source=source, employe=self.gerant)
         self.assertFalse(avec_melange.is_valid())
         with self.assertRaises(ValidationError):
-            annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0), destination.pk: (1, 0, 0)})
-        self.assertEqual(annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0)}), 1)
+            annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0), destination.pk: (1, 0, 0)}, succursale_id=1)
+        self.assertEqual(annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0)}, succursale_id=1), 1)
         self.assertFalse(TransactionCafe.objects.get(pk=destination.pk).annulee)
 
     def test_provenance_connue_et_inconnue_du_meme_client_selectionnables(self):
@@ -339,7 +339,7 @@ class FusionClientTests(TestCase):
         self.fusionner()
         self.acheter()
         source.refresh_from_db()
-        self.assertEqual(annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0), source_connue.pk: (1, 0, 0)}), 2)
+        self.assertEqual(annuler_operation(source.pk, self.gerant, {source.pk: (1, 0, 0), source_connue.pk: (1, 0, 0)}, succursale_id=1), 2)
 
     def test_erreur_journal_fusion_annule_tous_les_changements(self):
         self.ancienne()
@@ -397,7 +397,7 @@ class FusionClientTests(TestCase):
 
     def test_rapport_et_export_conservent_evenements_totaux_et_annulations(self):
         ligne = self.acheter(self.source)[0]
-        annuler_operation(ligne.pk, self.gerant)
+        annuler_operation(ligne.pk, self.gerant, succursale_id=1)
         self.acheter(self.source)
         date = timezone.localdate()
         parametres = dict(date_debut=date, date_fin=date, types=[valeur for valeur, _ in TransactionCafe.Type.choices], precision="transaction")
@@ -470,15 +470,15 @@ class FusionClientTests(TestCase):
 
     def test_source_masquee_redirection_get_et_post_refuse(self):
         self.fusionner()
-        url = reverse("ajouter_cafes", args=[self.source.pk])
-        self.assertNotContains(self.client.get(reverse("accueil")), "Camille")
-        self.assertRedirects(self.client.get(url), reverse("ajouter_cafes", args=[self.destination.pk]))
+        url = reverse("ajouter_cafes", args=[1, self.source.pk])
+        self.assertNotContains(self.client.get(reverse("accueil_succursale", args=[1])), "Camille")
+        self.assertRedirects(self.client.get(url), reverse("ajouter_cafes", args=[1, self.destination.pk]))
         self.assertEqual(self.client.post(url, {"quantite": 1, "type_transaction": "achat"}).status_code, 403)
         self.assertFalse(TransactionCafe.objects.exists())
 
     def test_avertissement_fiche_disparait_apres_operation_ajax(self):
         self.fusionner()
-        url = reverse("ajouter_cafes", args=[self.destination.pk])
+        url = reverse("ajouter_cafes", args=[1, self.destination.pk])
         self.assertContains(self.client.get(url), "la prochaine opération enregistrée rendra la fusion définitive")
         reponse = self.client.post(url, {"quantite": 1, "type_transaction": "achat"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(reponse.status_code, 200)
@@ -568,6 +568,7 @@ class FusionClientTests(TestCase):
 
 class FusionConcurrenceTests(TransactionTestCase):
     def setUp(self):
+        Succursale.objects.get_or_create(pk=1, defaults={"nom": "Succursale #1"})
         self.gerant = creer_employe("gerant-fusion-concurrence", "Gérant")
         self.barista = creer_employe("barista-fusion-concurrence")
         self.source = Client.objects.create(nom_complet="Source", telephone="111", nombre_cafes_achetes=2)
@@ -595,7 +596,7 @@ class FusionConcurrenceTests(TransactionTestCase):
         return fusionner_clients(self.source.pk, self.destination.pk, employe=self.gerant)
 
     def acheter(self, personne=None):
-        return ajouter_cafes(personne or self.destination, 1, employe=self.barista)
+        return ajouter_cafes(personne or self.destination, 1, employe=self.barista, succursale_id=1)
 
     def test_achat_et_annulation_fusion_concurrents(self):
         fusion = self.fusionner()
@@ -643,7 +644,7 @@ class FusionConcurrenceTests(TransactionTestCase):
 
     def test_annulation_transaction_et_fusion_serialisees(self):
         ligne = self.acheter(self.source)[0]
-        fusion, annulation = self.simultanement([self.fusionner, lambda: annuler_operation(ligne.pk, self.gerant)])
+        fusion, annulation = self.simultanement([self.fusionner, lambda: annuler_operation(ligne.pk, self.gerant, succursale_id=1)])
         ligne.refresh_from_db()
         self.assertEqual(ligne.client_id, self.destination.pk)
         annulee = not isinstance(annulation, ValidationError)
@@ -709,7 +710,9 @@ class FusionMigrationTests(TransactionTestCase):
                 attendues.append(attendue)
             self.assertEqual(list(FusionClient.objects.order_by("pk").values()), attendues)
             self.assertEqual(list(Client.objects.order_by("pk").values()), clients)
-            self.assertEqual(list(TransactionCafe.objects.values()), transactions)
+            self.assertEqual(list(TransactionCafe.objects.values()), [
+                {**ligne, "succursale_id": 1} for ligne in transactions
+            ])
             self.assertEqual(str(FusionClient.objects.get(pk=fusions[0]["id"])), "Source actuelle → Destination actuelle")
             connection.check_constraints()
         finally:
@@ -736,7 +739,9 @@ class FusionMigrationTests(TransactionTestCase):
             annulations = list(AncienneAnnulation.objects.values())
             MigrationExecutor(connection).migrate(dernier_schema)
             self.assertEqual(list(Client.objects.values()), [{**client, "est_actif": client["id"] != -1} for client in clients])
-            self.assertEqual(list(TransactionCafe.objects.values()), lignes)
+            self.assertEqual(list(TransactionCafe.objects.values()), [
+                {**ligne, "succursale_id": 1} for ligne in lignes
+            ])
             self.assertEqual(list(AnnulationTransaction.objects.values()), annulations)
             self.assertFalse(FusionClient.objects.exists())
             self.assertTrue(Client.objects.get(pk=personne.pk).est_actif)

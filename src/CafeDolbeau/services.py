@@ -9,7 +9,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
-from .permissions import PERMISSION_BASE, PERMISSION_GERANT
+from .permissions import PERMISSION_BASE, PERMISSION_GERANT, peut_intervenir_transaction, verifier_acces_succursale
 
 
 COMPTEURS = (
@@ -221,8 +221,8 @@ def supprimer_clients(client_ids, *, employe, soldes_attendus=None):
     return _avec_clients_verrouilles(Client.objects.filter(pk__in=identifiants), supprimer)
 
 
-def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT, *, employe):
-    """Enregistre ensemble les lignes et leurs effets, avec leur auteur."""
+def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT, *, employe, succursale_id):
+    """Enregistre ensemble les lignes et leurs effets, avec leur auteur et leur succursale."""
     if type_transaction not in (TransactionCafe.Type.ACHAT, TransactionCafe.Type.PREPAYE, TransactionCafe.Type.UTILISE):
         raise ValidationError("Type de transaction invalide.")
     if type(quantite) is not int or not 1 <= quantite <= 2147483647:
@@ -232,6 +232,7 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
 
     def enregistrer(client_actuel):
         auteur = _employe_actuel(employe)
+        verifier_acces_succursale(auteur, succursale_id)
         if not client_actuel.est_actif:
             raise ValidationError("Ce client a été fusionné. Ouvrez la fiche du client conservé.")
         operation = uuid4()
@@ -257,6 +258,7 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
             if nombre:
                 ligne = TransactionCafe(
                     client=client_actuel, employe=auteur, operation_id=operation,
+                    succursale_id=succursale_id,
                     type_transaction=type_cafe, quantite=nombre,
                     **dict(zip((champ for _, champ, _ in COMPTEURS), effets)),
                 )
@@ -288,9 +290,12 @@ def valider_effets(ligne, effets):
         raise ValidationError("Un achat ou un crédit doit avoir des variations positives ou nulles.")
 
 # Annulation des transactions prémigration.
-def preparer_annulation(source, employe, details_anciennes=None):
+def preparer_annulation(source, employe, details_anciennes=None, *, succursale_id=None):
+    employe = _employe_actuel(employe)
     gerant = employe.is_active and employe.has_perm(PERMISSION_GERANT)
     if not employe.is_active or not employe.has_perm(PERMISSION_BASE):
+        raise PermissionDenied
+    if not peut_intervenir_transaction(source, employe, succursale_id=succursale_id):
         raise PermissionDenied
     if source.client_id == Client.ID_SUPPRIME and not gerant:
         raise PermissionDenied
@@ -300,6 +305,10 @@ def preparer_annulation(source, employe, details_anciennes=None):
         lignes = list(TransactionCafe.objects.filter(
             client_id=source.client_id, operation_id=source.operation_id,
         ).select_related("employe", "annulation__employe"))
+        if any(not peut_intervenir_transaction(
+            ligne, employe, succursale_id=succursale_id, verifier_recence=False,
+        ) for ligne in lignes):
+            raise PermissionDenied
         if not gerant and any(ligne.employe_id != employe.pk for ligne in lignes):
             raise PermissionDenied
         if all(ligne.annulee for ligne in lignes):
@@ -323,6 +332,8 @@ def preparer_annulation(source, employe, details_anciennes=None):
     ), source).select_related("employe", "annulation"))
     if len(lignes) != len(details_anciennes):
         raise ValidationError("Choisissez uniquement les anciennes transactions non annulées de ce client.")
+    if any(not peut_intervenir_transaction(ligne, employe) for ligne in lignes):
+        raise PermissionDenied
     for ligne in lignes:
         effets = details_anciennes[ligne.pk]
         valider_effets(ligne, effets)
@@ -344,11 +355,11 @@ def recapitulatif_annulation(client, lignes):
     ]
 
 
-def annuler_operation(transaction_id, employe, details_anciennes=None):
+def annuler_operation(transaction_id, employe, details_anciennes=None, *, succursale_id=None):
     def annuler(client):
         acteur = _employe_actuel(employe)
         source = TransactionCafe.objects.select_related("annulation").get(pk=transaction_id, client=client)
-        lignes = preparer_annulation(source, acteur, details_anciennes)
+        lignes = preparer_annulation(source, acteur, details_anciennes, succursale_id=succursale_id)
         if all(ligne.annulee for ligne in lignes):
             return 0
         nouveaux_soldes = recapitulatif_annulation(client, lignes)

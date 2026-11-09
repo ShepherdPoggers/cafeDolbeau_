@@ -13,8 +13,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Compose lit le même fichier. Les variables du processus restent prioritaires.
+load_dotenv(BASE_DIR.parent / '.env', override=False)
 
 
 # Quick-start development settings - unsuitable for production
@@ -75,12 +81,36 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.environ.get('CAFE_DB_PATH', BASE_DIR / 'db.sqlite3'),
+CAFE_DB_ENGINE = os.environ.get('CAFE_DB_ENGINE', 'postgresql')
+
+if CAFE_DB_ENGINE == 'postgresql':
+    def database_env(name):
+        value = os.environ.get(name)
+        if not value:
+            raise ImproperlyConfigured(
+                f'{name} est requis. Copiez .env.example vers .env et renseignez la connexion PostgreSQL.'
+            )
+        return value
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': database_env('POSTGRES_DB'),
+            'USER': database_env('POSTGRES_USER'),
+            'PASSWORD': database_env('POSTGRES_PASSWORD'),
+            'HOST': os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        }
     }
-}
+elif CAFE_DB_ENGINE == 'sqlite':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.environ.get('CAFE_DB_PATH', BASE_DIR / 'db.sqlite3'),
+        }
+    }
+else:
+    raise ImproperlyConfigured('CAFE_DB_ENGINE doit être postgresql ou sqlite.')
 
 
 # Password validation

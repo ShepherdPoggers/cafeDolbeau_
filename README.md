@@ -21,7 +21,7 @@ Application Django pour gérer les clients, les achats de cafés, les cartes pr�
 - Python 3.12 avec `pip` et `venv`.
 - Une copie du dépôt sur votre ordinateur.
 
-Les dépendances sont fixées dans `requirements.txt`, notamment Django 5.2.17. SQLite est utilisé localement : aucun serveur de base de données supplémentaire n’est nécessaire.
+Les dépendances sont fixées dans `requirements.txt`, notamment Django 5.2.17. PostgreSQL est utilisé par défaut, selon la configuration `.env`. Les scripts de démonstration ci-dessous créent une base SQLite; pour utiliser cette base ensuite, définir `CAFE_DB_ENGINE=sqlite` (et `CAFE_DB_PATH` si le fichier n’est pas `src/db.sqlite3`).
 
 ## Démarrer une V2 neuve avec les données de test
 
@@ -72,20 +72,23 @@ Le script crée automatiquement les employés suivants :
 | Nom d’utilisateur | Mot de passe | Rôle / état | Permissions et accès |
 | --- | --- | --- | --- |
 | `admin_test` | `CafeTest-2026!` | Superutilisateur | Toutes les permissions, y compris la gestion des employés et des groupes dans l’administration. |
-| `gerant_test` | `CafeTest-2026!` | Gérant | `acces_base` et `acces_gerant` : opérations courantes, annulation des transactions des employés, rapports et export Excel, gestion des clients, fusions et modification de la règle du café gratuit. |
-| `barista_test` | `CafeTest-2026!` | Barista | `acces_base` : recherche et création de clients, achats de cafés et de cartes, consommation de crédits et annulation de ses propres transactions. Aucun accès aux rapports ni à l’administration. |
-| `barista2_test` | `CafeTest-2026!` | Barista | `acces_base` : mêmes permissions que `barista_test`, avec ses propres transactions. Permet de vérifier qu’un barista ne peut pas annuler les transactions d’un autre. |
+| `proprietaire_test` | `CafeTest-2026!` | Propriétaire | Toutes les fonctions métier et toutes les succursales, gestion des employés et des affectations, rapports et export Excel. Ce compte n’est pas superutilisateur Django. |
+| `gerant_test` | `CafeTest-2026!` | Gérant | Succursales nº 1 et nº 2 : opérations et annulations dans son périmètre, création de Baristas et gestion de leurs affectations dans ce périmètre. Gestion globale des clients, fusions, soldes et fidélité. Aucun accès aux rapports et exports pour cette étape. |
+| `barista_test` | `CafeTest-2026!` | Barista | `acces_base` : recherche et création de clients, achats de cafés et de cartes, consommation de crédits et annulation de ses propres transactions récentes dans la succursale courante (nº 1). Aucun accès aux rapports ni à l’administration. |
+| `barista2_test` | `CafeTest-2026!` | Barista | `acces_base` : mêmes permissions que `barista_test`, avec ses propres transactions. Affecté aux succursales nº 1 et nº 2; permet de vérifier qu’un barista ne peut pas annuler les transactions d’un autre ou d’une autre caisse. |
 | `inactif_test` | `CafeTest-2026!` | Barista désactivé | Membre du groupe Barista, mais connexion refusée et aucun accès tant que le compte est désactivé. |
 
 Le groupe Gérant possède aussi les permissions Django `add_client`, `view_client`, `change_client` et `delete_client` pour administrer les clients.
 
-La connexion se fait sur [http://127.0.0.1:8000/connexion/](http://127.0.0.1:8000/connexion/). L’administration est accessible aux gérants et superutilisateurs sur [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/).
+La connexion se fait sur [http://127.0.0.1:8000/connexion/](http://127.0.0.1:8000/connexion/). L’administration est accessible aux Gérants, Propriétaires et superutilisateurs sur [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/).
+
+Les pages de caisse utilisent `/succursales/1/`, `/succursales/2/` et `/succursales/3/`. La page `/` présente les succursales autorisées. L’historique client affiche les dix dernières transactions de tout le réseau; les soldes et la fidélité sont communs. Le Propriétaire accède aussi à la nº 3 et à toute future succursale. Pour une base existante, consulter la [migration des rôles et affectations](docs/migration.md#ajouter-le-propriétaire-et-les-affectations).
 
 ### Données disponibles
 
 Le jeu de test contient des clients, dont deux homonymes, des achats directs avec récompense, des cartes prépayées, une consommation de crédits, une annulation, une fusion réversible et l’historique d’un client supprimé.
 
-Les transactions sont réparties sur les 45 derniers jours. Pour voir tous les exemples dans les rapports, choisir une période couvrant les **60 derniers jours** et sélectionner tous les types de transactions.
+Les transactions sont réparties sur les 45 derniers jours. Pour voir tous les exemples dans les rapports, se connecter comme `proprietaire_test` ou `admin_test`, choisir une période couvrant les **60 derniers jours** et sélectionner tous les types de transactions.
 
 ## Afficher les soldes
 
@@ -127,7 +130,7 @@ Sous Windows, remplacer `python` par `.\.venv\Scripts\python.exe` dans ce bloc.
 
 ## Base de données et administration
 
-La base locale se trouve dans **`src/db.sqlite3`**. La commande `migrate` crée la base et ses tables si elles n’existent pas, ou applique les migrations manquantes. Elle doit être exécutée avant la première utilisation.
+La base SQLite de démonstration se trouve dans **`src/db.sqlite3`**. La base PostgreSQL est configurée par les variables `POSTGRES_*` du fichier `.env`. La commande `migrate` crée la base et ses tables si elles n’existent pas, ou applique les migrations manquantes. Elle doit être exécutée avant la première utilisation.
 
 La procédure V2 ci-dessus exécute déjà les migrations. Pour démarrer plutôt avec une base vide, remplacer la commande de chargement des données de test par `python src/manage.py migrate`, puis créer un premier compte avec `python src/manage.py createsuperuser` avant de lancer le serveur. Sous Windows, utiliser `.\.venv\Scripts\python.exe` à la place de `python`.
 

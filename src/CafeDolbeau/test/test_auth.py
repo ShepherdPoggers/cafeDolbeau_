@@ -8,7 +8,7 @@ from django.urls import path, reverse
 
 from config.urls import urlpatterns as application_urls
 
-from ..models import Client, Employe, TransactionCafe
+from ..models import AffectationEmployeSuccursale, Client, Employe, TransactionCafe
 from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, gerant_requis
 
 
@@ -46,6 +46,8 @@ class AuthentificationTests(TestCase):
         cls.barista.groups.add(baristas)
         cls.inactif.groups.add(baristas)
         cls.gerant.groups.add(Group.objects.get(name="Gérant"))
+        for employe in (cls.barista, cls.gerant, cls.inactif):
+            AffectationEmployeSuccursale.objects.create(employe_id=employe.pk, succursale_id=1)
         cls.personne = Client.objects.create(
             nom_complet="Client confidentiel", courriel="client@example.com",
         )
@@ -82,10 +84,10 @@ class AuthentificationTests(TestCase):
 
     def test_pages_et_recherche_exigent_une_connexion(self):
         for url in (
-            reverse("accueil"),
-            reverse("accueil") + "?q=confidentiel&partiel=recherche",
-            reverse("ajouter_cafes", args=[self.personne.pk]),
-            reverse("ajouter_cafes", args=[self.personne.pk + 1]),
+            reverse("accueil_succursale", args=[1]),
+            reverse("accueil_succursale", args=[1]) + "?q=confidentiel&partiel=recherche",
+            reverse("ajouter_cafes", args=[1, self.personne.pk]),
+            reverse("ajouter_cafes", args=[1, self.personne.pk + 1]),
         ):
             with self.subTest(url=url):
                 response = self.client.get(url)
@@ -93,12 +95,12 @@ class AuthentificationTests(TestCase):
                 self.assertNotIn(b"client@example.com", response.content)
 
     def test_posts_anonymes_ne_modifient_aucune_donnee(self):
-        response = self.client.post(reverse("accueil"), {
+        response = self.client.post(reverse("accueil_succursale", args=[1]), {
             "nom_complet": "Intrus", "telephone": "418 555-1234",
         })
-        self.assertRedirects(response, self.connexion_url(reverse("accueil")))
+        self.assertRedirects(response, self.connexion_url(reverse("accueil_succursale", args=[1])))
         for asynchrone in (False, True):
-            url = reverse("ajouter_cafes", args=[self.personne.pk])
+            url = reverse("ajouter_cafes", args=[1, self.personne.pk])
             response = self.client.post(url, {"quantite": 10}, **(
                 {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"} if asynchrone else {}
             ))
@@ -127,7 +129,7 @@ class AuthentificationTests(TestCase):
                 self.assertEqual(self.client.session[SESSION_KEY], str(employe.pk))
 
     def test_connexion_revient_a_la_page_demandee(self):
-        destination = reverse("ajouter_cafes", args=[self.personne.pk])
+        destination = reverse("ajouter_cafes", args=[1, self.personne.pk])
         response = self.client.post(reverse("connexion"), {
             "username": "barista", "password": self.mot_de_passe,
             "next": destination,
@@ -159,7 +161,7 @@ class AuthentificationTests(TestCase):
 
     def test_compte_sans_role_deja_connecte_refuse_en_get_et_post(self):
         self.client.force_login(self.sans_role)
-        for url in (reverse("accueil"), reverse("ajouter_cafes", args=[self.personne.pk])):
+        for url in (reverse("accueil_succursale", args=[1]), reverse("ajouter_cafes", args=[1, self.personne.pk])):
             for method in (self.client.get, self.client.post):
                 with self.subTest(url=url, method=method.__name__):
                     response = method(url, {"quantite": 1})
@@ -169,16 +171,16 @@ class AuthentificationTests(TestCase):
 
     def test_barista_utilise_les_fonctions_de_base(self):
         self.client.force_login(self.barista)
-        response = self.client.get(reverse("accueil"))
+        response = self.client.get(reverse("accueil_succursale", args=[1]))
         self.assertContains(response, "Barista")
         self.assertContains(response, "Se déconnecter")
         self.assertNotContains(response, "Administration")
         self.assertContains(response, "Client confidentiel")
-        response = self.client.post(reverse("accueil"), {
+        response = self.client.post(reverse("accueil_succursale", args=[1]), {
             "nom_complet": "Nouveau client", "telephone": "418 555-1234",
         })
-        self.assertRedirects(response, reverse("accueil"))
-        response = self.client.post(reverse("ajouter_cafes", args=[self.personne.pk]), {
+        self.assertRedirects(response, reverse("accueil_succursale", args=[1]))
+        response = self.client.post(reverse("ajouter_cafes", args=[1, self.personne.pk]), {
             "quantite": 2, "type_transaction": "achat",
         }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 200)
@@ -186,7 +188,7 @@ class AuthentificationTests(TestCase):
 
     def test_gerant_accede_aux_fonctions_de_base_et_a_l_administration(self):
         self.client.force_login(self.gerant)
-        for url in (reverse("accueil"), reverse("ajouter_cafes", args=[self.personne.pk])):
+        for url in (reverse("accueil_succursale", args=[1]), reverse("ajouter_cafes", args=[1, self.personne.pk])):
             response = self.client.get(url)
             self.assertContains(response, "Gérant")
             self.assertContains(response, "Administration")
@@ -231,11 +233,9 @@ class AuthentificationTests(TestCase):
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 200)
         self.assertEqual(self.client.get(reverse("admin:CafeDolbeau_employe_changelist")).status_code, 200)
 
-    def test_gerant_ne_peut_pas_modifier_les_comptes_ou_les_permissions(self):
+    def test_gerant_ne_peut_pas_modifier_les_permissions_techniques(self):
         self.client.force_login(self.gerant)
         for url in (
-            reverse("admin:CafeDolbeau_employe_changelist"),
-            reverse("admin:CafeDolbeau_employe_change", args=[self.barista.pk]),
             reverse("admin:auth_group_change", args=[Group.objects.get(name="Gérant").pk]),
         ):
             for method in (self.client.get, self.client.post):
@@ -252,7 +252,7 @@ class AuthentificationTests(TestCase):
         self.assertRedirects(response, reverse("connexion"))
         self.assertNotIn(SESSION_KEY, self.client.session)
         self.assertRedirects(
-            self.client.get(reverse("accueil")), self.connexion_url(reverse("accueil")),
+            self.client.get(reverse("accueil_succursale", args=[1])), self.connexion_url(reverse("accueil_succursale", args=[1])),
         )
 
     def test_connexion_et_deconnexion_exigent_un_jeton_csrf(self):
@@ -265,7 +265,7 @@ class AuthentificationTests(TestCase):
         navigateur.force_login(self.barista)
         self.assertEqual(navigateur.post(reverse("deconnexion")).status_code, 403)
         self.assertIn(SESSION_KEY, navigateur.session)
-        navigateur.get(reverse("accueil"))
+        navigateur.get(reverse("accueil_succursale", args=[1]))
         response = navigateur.post(reverse("deconnexion"), {
             "csrfmiddlewaretoken": navigateur.cookies["csrftoken"].value,
         })
@@ -274,14 +274,14 @@ class AuthentificationTests(TestCase):
     def test_retrait_du_role_bloque_la_session_existante(self):
         self.client.force_login(self.barista)
         self.barista.groups.clear()
-        self.assertEqual(self.client.get(reverse("accueil")).status_code, 403)
-        response = self.client.post(reverse("ajouter_cafes", args=[self.personne.pk]), {"quantite": 1})
+        self.assertEqual(self.client.get(reverse("accueil_succursale", args=[1])).status_code, 403)
+        response = self.client.post(reverse("ajouter_cafes", args=[1, self.personne.pk]), {"quantite": 1})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(TransactionCafe.objects.count(), 0)
 
     def test_pages_privees_ne_sont_pas_mises_en_cache(self):
         self.client.force_login(self.barista)
-        for url in (reverse("accueil"), reverse("ajouter_cafes", args=[self.personne.pk])):
+        for url in (reverse("accueil_succursale", args=[1]), reverse("ajouter_cafes", args=[1, self.personne.pk])):
             self.assertIn("no-store", self.client.get(url).headers["Cache-Control"])
 
     @override_settings(ROOT_URLCONF=__name__)

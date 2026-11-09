@@ -12,18 +12,28 @@ from django.views.decorators.http import require_http_methods
 from ..forms.forms import AchatCartesForm, AjoutCafesForm, ClientForm
 from ..forms.forms_annulation import EffetsAnciennesFormSet, SelectionAnciennesForm
 from ..models import Client, FusionClient, TransactionCafe
-from ..permissions import PERMISSION_GERANT, acces_base_requis, gerant_requis, peut_annuler
+from ..permissions import (
+    PERMISSION_GERANT, acces_base_requis, gerant_requis, peut_annuler,
+    peut_intervenir_transaction, succursale_requise, succursales_autorisees,
+)
 from ..services import ajouter_cafes, annuler_operation, preparer_annulation, recapitulatif_annulation
 
 
-def historique_client(client, employe):
+def historique_client(client, employe, *, succursale_id):
     lignes = list(client.transactions_cafe.select_related("employe", "annulation__employe")[:10])
     for ligne in lignes:
-        ligne.annulation_disponible = peut_annuler(ligne, employe)
+        ligne.annulation_disponible = peut_annuler(ligne, employe, succursale_id=succursale_id)
     return lignes
 
 @never_cache
 @acces_base_requis
+@require_http_methods(["GET"])
+def entree(request):
+    return render(request, "succursales.html", {"succursales": succursales_autorisees(request.user)})
+
+
+@never_cache
+@succursale_requise
 def accueil(request):
     """Recherche des clients et gère leur ajout depuis l'accueil."""
     recherche = request.GET.get("q", "").strip()
@@ -43,7 +53,7 @@ def accueil(request):
     if request.method == "POST" and form.is_valid():
         form.save() # Crée un nouvel objet Client et l'enregistre dans la base de données.
         messages.success(request, "Le client a été ajouté avec succès.")
-        return redirect("accueil")
+        return redirect("accueil_succursale", succursale_id=request.succursale.pk)
     return render(request, "accueil.html", {
         "form": form,
         "recherche": recherche,
@@ -51,7 +61,7 @@ def accueil(request):
     })
 
 @never_cache
-@acces_base_requis
+@succursale_requise
 def ajouter_cafes_client(request, pk):
     client = get_object_or_404(Client.objects.exclude(pk=Client.ID_SUPPRIME), pk=pk)
     if not client.est_actif:
@@ -59,7 +69,7 @@ def ajouter_cafes_client(request, pk):
             raise PermissionDenied("Ce client est désactivé par une fusion.")
         fusion = FusionClient.en_attente_pour(client.pk).filter(client_source_id=client.pk).first()
         if fusion and Client.objects.filter(pk=fusion.client_destination_id, est_actif=True).exists():
-            return redirect("ajouter_cafes", pk=fusion.client_destination_id)
+            return redirect("ajouter_cafes", pk=fusion.client_destination_id, succursale_id=request.succursale.pk)
         raise Http404
     asynchrone = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     formulaires = {
@@ -77,7 +87,7 @@ def ajouter_cafes_client(request, pk):
         formulaires[type_transaction] = form
         if form.is_valid():
             try:
-                transactions = ajouter_cafes(client, form.cleaned_data["quantite"], type_transaction, employe=request.user)
+                transactions = ajouter_cafes(client, form.cleaned_data["quantite"], type_transaction, employe=request.user, succursale_id=request.succursale.pk)
             except Client.DoesNotExist:
                 raise Http404("Ce client a été supprimé.")
             except ValidationError as erreur:
@@ -91,7 +101,7 @@ def ajouter_cafes_client(request, pk):
                         else formulaires[TransactionCafe.Type.ACHAT]
                     ),
                     "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
-                    "transactions": historique_client(client, request.user),
+                    "transactions": historique_client(client, request.user, succursale_id=request.succursale.pk),
                     "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),
                 }, status=400)
             messages.success(request, "La transaction de cafés a été enregistrée.")
@@ -112,10 +122,10 @@ def ajouter_cafes_client(request, pk):
                         for message in messages.get_messages(request)
                     ],
                     "historique": render_to_string("transactions_cafe.html", {
-                        "transactions": historique_client(client, request.user),
+                        "transactions": historique_client(client, request.user, succursale_id=request.succursale.pk),
                     }, request=request),
                 })
-            return redirect("ajouter_cafes", pk=client.pk)
+            return redirect("ajouter_cafes", pk=client.pk, succursale_id=request.succursale.pk)
         if asynchrone:
             return JsonResponse({"erreurs": form.errors.get_json_data()}, status=400)
     return render(request, "ajouter_cafes.html", {
@@ -126,13 +136,13 @@ def ajouter_cafes_client(request, pk):
             else formulaires[TransactionCafe.Type.ACHAT]
         ),
         "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
-        "transactions": historique_client(client, request.user),
+        "transactions": historique_client(client, request.user, succursale_id=request.succursale.pk),
         "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),
     })
 
 
 @never_cache
-@acces_base_requis
+@succursale_requise
 @require_http_methods(["GET", "POST"])
 def annuler_transaction(request, pk, transaction_id):
     return _annuler_transaction(request, transaction_id, pk=pk)
@@ -150,8 +160,9 @@ def _annuler_transaction(request, transaction_id, *, pk=None, origine_admin=Fals
         TransactionCafe.objects.select_related("client", "employe", "annulation__employe"),
         pk=transaction_id, **({"client_id": pk} if pk is not None else {}),
     )
+    succursale_id = getattr(getattr(request, "succursale", None), "pk", None)
     gerant = request.user.has_perm(PERMISSION_GERANT)
-    if not gerant and (source.client_id == Client.ID_SUPPRIME or source.employe_id != request.user.pk):
+    if not peut_intervenir_transaction(source, request.user, succursale_id=succursale_id):
         raise PermissionDenied
     origine_admin = origine_admin or (request.GET.get("origine") == "admin" and gerant)
     contexte = {
@@ -167,13 +178,13 @@ def _annuler_transaction(request, transaction_id, *, pk=None, origine_admin=Fals
         messages.success(request, "L’opération a été annulée." if nombre else "Cette opération est déjà annulée.")
         if origine_admin or not Client.objects.filter(pk=pk).exists():
             return redirect("admin:CafeDolbeau_transactioncafe_changelist")
-        return redirect("ajouter_cafes", pk=pk)
+        return redirect("ajouter_cafes", pk=pk, succursale_id=succursale_id)
 
     try:
         if request.method == "POST" and request.POST.get("action") == "confirmer":
             try:
                 confirmation = signing.loads(request.POST.get("confirmation", ""), salt="annulation-cafe", max_age=1800)
-                if confirmation["source"] != source.pk or confirmation["employe"] != request.user.pk:
+                if confirmation["source"] != source.pk or confirmation["employe"] != request.user.pk or confirmation["succursale"] != succursale_id:
                     raise signing.BadSignature
                 if not source.annulee and confirmation["operation"] != (str(source.operation_id) if source.operation_id else None):
                     raise ValidationError("L’opération a changé. Actualisez le récapitulatif.")
@@ -182,26 +193,26 @@ def _annuler_transaction(request, transaction_id, *, pk=None, origine_admin=Fals
                     details = {int(identifiant): tuple(valeurs) for identifiant, valeurs in details.items()}
             except (signing.BadSignature, KeyError, TypeError, ValueError):
                 raise ValidationError("La confirmation est invalide ou expirée. Ouvrez à nouveau le récapitulatif.")
-            return terminer(annuler_operation(source.pk, request.user, details))
+            return terminer(annuler_operation(source.pk, request.user, details, succursale_id=succursale_id))
 
         if source.annulee:
             contexte["deja_annulee"] = True
         elif source.operation_id:
             if request.method == "POST":
                 return HttpResponseBadRequest("Action d’annulation invalide.")
-            lignes = preparer_annulation(source, request.user)
+            lignes = preparer_annulation(source, request.user, succursale_id=succursale_id)
             if all(ligne.annulee for ligne in lignes):
                 contexte["deja_annulee"] = True
             else:
                 contexte.update(lignes=lignes, soldes=recapitulatif_annulation(source.client, lignes))
                 contexte["confirmation"] = signing.dumps({
-                    "source": source.pk, "employe": request.user.pk,
+                    "source": source.pk, "employe": request.user.pk, "succursale": succursale_id,
                     "operation": str(source.operation_id), "details": None,
                 }, salt="annulation-cafe")
         else:
             selection = SelectionAnciennesForm(
                 request.POST if request.method == "POST" else None,
-                client=source.client, source=source,
+                client=source.client, source=source, employe=request.user,
             )
             contexte["selection"] = selection
             action = request.POST.get("action")
@@ -216,10 +227,10 @@ def _annuler_transaction(request, transaction_id, *, pk=None, origine_admin=Fals
                 contexte.update(effets=effets, lignes_selectionnees=lignes)
                 if action == "previsualiser" and effets.is_valid():
                     details = effets.details()
-                    lignes = preparer_annulation(source, request.user, details)
+                    lignes = preparer_annulation(source, request.user, details, succursale_id=succursale_id)
                     contexte.update(lignes=lignes, soldes=recapitulatif_annulation(source.client, lignes))
                     contexte["confirmation"] = signing.dumps({
-                        "source": source.pk, "employe": request.user.pk,
+                        "source": source.pk, "employe": request.user.pk, "succursale": succursale_id,
                         "operation": None, "details": details,
                     }, salt="annulation-cafe", compress=True)
     except ValidationError as erreur:

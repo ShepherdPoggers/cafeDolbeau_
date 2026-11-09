@@ -11,11 +11,28 @@ python src/manage.py check
 
 La migration `0017_succursales` crée la succursale d’identifiant `1`, nommée « Succursale #1 », et lui associe toutes les transactions existantes, y compris les transactions annulées et celles des clients supprimés. Les dates, les quantités et les soldes des clients sont conservés. Cette migration fonctionne avec PostgreSQL et SQLite; elle s’applique aussi automatiquement aux installations neuves.
 
-Les nouvelles opérations saisies dans les formulaires actuels utilisent la succursale nº 1. La fidélité reste commune à toutes les succursales. Le service `ajouter_cafes` accepte un paramètre facultatif `succursale_id` pour attribuer toutes les lignes d’une opération à une autre succursale existante.
+La fidélité reste commune à toutes les succursales. Les opérations saisies dans les formulaires utilisent maintenant la succursale de l’URL. Le service `ajouter_cafes` exige le paramètre `succursale_id` et vérifie les droits de l’employé; aucune opération de caisse ne choisit implicitement la succursale nº 1.
 
-Les superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants conservent la consultation des transactions, sans accès à la gestion des succursales.
+Les Propriétaires et superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants consultent et annulent les transactions des succursales auxquelles ils sont affectés, sans accès à la gestion des succursales.
 
 Avant un transfert de SQLite vers PostgreSQL, appliquer également cette migration à la source SQLite. Le transfert conserve les succursales et leurs liens avec les transactions.
+
+## Ajouter le Propriétaire et les affectations
+
+La même commande `python src/manage.py migrate` applique `0018_proprietaire_affectations`. Elle crée le groupe Propriétaire et les affectations des Baristas et Gérants existants à la succursale nº 1, y compris les comptes désactivés. Elle conserve les rôles existants, les identifiants, les mots de passe, les soldes et l’historique. Aucun compte n’est automatiquement promu Propriétaire.
+
+Après la migration :
+
+1. Se connecter avec un superutilisateur sur `/admin/`.
+2. Créer ou modifier un compte employé, choisir le rôle **Propriétaire**, puis enregistrer. Ce compte obtient tous les droits métier et toutes les succursales sans devenir superutilisateur Django.
+3. Le Propriétaire peut ensuite créer des Gérants et configurer les succursales de chaque employé. Un gérant peut créer uniquement des Baristas et gérer leurs affectations dans ses propres succursales. Les affectations hors de son périmètre sont conservées.
+4. Remplacer les adresses des caisses par `/succursales/1/`, `/succursales/2/`, etc. Le nom de la succursale est affiché dans l’en-tête. `/` affiche les succursales accessibles, sans permettre d’opération de caisse; les anciennes adresses `/clients/.../cafes/` ne sont plus utilisées.
+
+Les dix dernières transactions de chaque client restent visibles pour tous les employés autorisés à accéder à une caisse, toutes succursales confondues. Le barista peut annuler ses propres transactions récentes uniquement dans sa succursale courante. Le gérant peut annuler les transactions de toutes ses succursales; le Propriétaire peut annuler dans tout le réseau. Ces corrections restent des annulations tracées, sans suppression physique de transactions.
+
+Les Gérants conservent les fonctions globales de gestion des clients, de fusion, de correction des soldes et de paramétrage de la fidélité. Les rapports et exports Excel sont provisoirement réservés aux Propriétaires et superutilisateurs; leur filtrage par succursale sera traité ultérieurement. Un retrait d’affectation interdit les nouvelles opérations de caisse et annulations concernées, sans modifier l’historique.
+
+Avant un transfert SQLite vers PostgreSQL, appliquer également `0018` sur la source SQLite avec `CAFE_DB_ENGINE=sqlite` et `CAFE_DB_PATH` désignant le fichier source. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
 
 ## Conservation des données
 

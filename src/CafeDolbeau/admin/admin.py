@@ -12,9 +12,9 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from ..forms.forms import CreationEmployeForm, ModificationEmployeForm, ParametresCafeForm
-from ..models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
+from ..models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, Succursale, TransactionCafe
 from .admin_fusions import confirmer_fusion
-from ..permissions import PERMISSION_GERANT
+from ..permissions import PERMISSION_GERANT, employes_administrables, est_proprietaire, succursales_autorisees, transactions_administrables
 from ..services import COMPTEURS, _avec_client_verrouille, soldes_clients, supprimer_clients
 
 
@@ -48,41 +48,109 @@ class EmployeAdmin(UserAdmin):
     list_filter = ("is_active", "groups")
     filter_horizontal = ("user_permissions",)
 
+    actions = None
+
     def has_module_permission(self, request):
-        return super().has_module_permission(request) or (
-            request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
-        )
+        return request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
 
     def has_add_permission(self, request):
-        return super().has_add_permission(request) or (
-            request.user.is_active and request.user.has_perm(PERMISSION_GERANT)
-        )
+        return self.has_module_permission(request) and succursales_autorisees(request.user).exists()
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return est_proprietaire(request.user) and (obj is None or request.user.is_superuser or not obj.is_superuser)
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            champs = ("username", "role", "succursales", "password1", "password2")
+            return ((None, {"fields": champs}),)
+        if not est_proprietaire(request.user):
+            return ((None, {"fields": ("username", "succursales")}),)
+        fieldsets = super().get_fieldsets(request, obj)
+        if not request.user.is_superuser:
+            fieldsets = tuple((titre, options) for titre, options in fieldsets if titre != "Permissions avancées")
+        return (*fieldsets, ("Affectations", {"fields": ("succursales",)}))
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj and not est_proprietaire(request.user):
+            return (*self.readonly_fields, "username", "role", "password")
+        return self.readonly_fields
+
+    def get_form(self, request, obj=None, **kwargs):
+        formulaire = super().get_form(request, obj, **kwargs)
+
+        class FormulaireActeur(formulaire):
+            def __init__(self, *args, **options):
+                super().__init__(*args, acteur=request.user, **options)
+
+        return FormulaireActeur
+
+    def save_model(self, request, obj, form, change):
+        acteur = Employe.objects.get(pk=request.user.pk)
+        if not acteur.is_active or not acteur.has_perm(PERMISSION_GERANT):
+            raise PermissionDenied
+        if form.cleaned_data["succursales"].exclude(pk__in=succursales_autorisees(acteur)).exists():
+            raise PermissionDenied
+        if change:
+            actuel = Employe.objects.select_for_update().get(pk=obj.pk)
+            if not acteur.is_superuser and actuel.is_superuser:
+                raise PermissionDenied
+            if not est_proprietaire(acteur):
+                if not employes_administrables(acteur).filter(pk=obj.pk).exists():
+                    raise PermissionDenied
+                return
+        elif not est_proprietaire(acteur) and form.cleaned_data["role"].name != "Barista":
+            raise PermissionDenied
+        super().save_model(request, obj, form, change)
+
+    def user_change_password(self, request, id, form_url=""):
+        if not est_proprietaire(request.user):
+            raise PermissionDenied
+        return super().user_change_password(request, id, form_url)
 
     def _add_view(self, request, form_url="", extra_context=None):
-        if request.user.is_superuser:
-            return super()._add_view(request, form_url, extra_context)
-        # UserAdmin exige aussi le droit de modification car son formulaire
-        # standard permet des privilèges avancés. Notre formulaire de création
-        # limite les champs au nom, au rôle et au mot de passe ; conserver
-        # le contrôle d'ajout de ModelAdmin sans ouvrir la modification des comptes.
         return admin.ModelAdmin.add_view(self, request, form_url, extra_context)
 
     def response_add(self, request, obj, post_url_continue=None):
-        if request.user.is_superuser:
-            return super().response_add(request, obj, post_url_continue)
         return admin.ModelAdmin.response_add(self, request, obj, post_url_continue)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).prefetch_related("groups")
+        return super().get_queryset(request).filter(pk__in=employes_administrables(request.user)).prefetch_related("groups")
 
     @admin.display(description="Rôle")
     def afficher_role(self, employe):
+        if employe.is_superuser:
+            return "Superutilisateur"
         roles = {groupe.name for groupe in employe.groups.all()}
-        if employe.is_superuser or "Gérant" in roles:
-            return "Gérant"
-        if "Barista" in roles:
-            return "Barista"
-        return "Non attribué"
+        return next((role for role in ("Propriétaire", "Gérant", "Barista") if role in roles), "Non attribué")
+
+
+@admin.register(Succursale)
+class SuccursaleAdmin(admin.ModelAdmin):
+    list_display = ("id", "nom")
+    search_fields = ("nom",)
+    fields = ("nom",)
+    actions = None
+
+    def has_module_permission(self, request):
+        return est_proprietaire(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request):
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self.has_module_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Client)
@@ -287,16 +355,16 @@ class AnnulationInline(admin.StackedInline):
 @admin.register(TransactionCafe)
 class TransactionCafeAdmin(admin.ModelAdmin):
     change_form_template = "admin/CafeDolbeau/transactioncafe/change_form.html"
-    list_display = ("id", "client", "type_transaction", "quantite", "employe", "date_creation", "est_annulee", "lien_annuler")
-    list_filter = (StatutAnnulationFilter, "client", "employe", "type_transaction", "date_creation")
+    list_display = ("id", "client", "succursale", "type_transaction", "quantite", "employe", "date_creation", "est_annulee", "lien_annuler")
+    list_filter = (StatutAnnulationFilter, ("succursale", admin.RelatedOnlyFieldListFilter), "client", "employe", "type_transaction", "date_creation")
     search_fields = ("client__nom_complet", "client__telephone", "client__courriel", "employe__username")
-    readonly_fields = ("client", "client_origine_id", "type_transaction", "quantite", "employe", "date_creation", "operation_id", "variation_achetes", "variation_prepayes", "variation_gratuits", "est_annulee", "lien_annuler")
+    readonly_fields = ("client", "client_origine_id", "succursale", "type_transaction", "quantite", "employe", "date_creation", "operation_id", "variation_achetes", "variation_prepayes", "variation_gratuits", "est_annulee", "lien_annuler")
     fields = readonly_fields
     actions = None
     inlines = (AnnulationInline,)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("client", "employe", "annulation__employe")
+        return super().get_queryset(request).filter(pk__in=transactions_administrables(request.user)).select_related("client", "succursale", "employe", "annulation__employe")
 
     def has_view_permission(self, request, obj=None):
         return request.user.has_perm(PERMISSION_GERANT)

@@ -63,7 +63,7 @@
         </form>
     {% endif %}
     {% if erreurs %}<p><a href="{{ request.get_full_path }}">Ouvrir à nouveau le récapitulatif</a></p>{% endif %}
-    <p>{% if origine_admin %}<a href="{% url 'admin:CafeDolbeau_transactioncafe_changelist' %}">Retour aux transactions</a>{% else %}<a href="{% url 'ajouter_cafes' client.pk %}">Retour aux cafés du client</a>{% endif %}</p>
+    <p>{% if origine_admin %}<a href="{% url 'admin:CafeDolbeau_transactioncafe_changelist' %}">Retour aux transactions</a>{% else %}<a href="{% url 'ajouter_cafes' request.succursale.pk client.pk %}">Retour aux cafés du client</a>{% endif %}</p>
 </main>
 </body>
 </html>

@@ -3,7 +3,7 @@ from django.contrib.auth.models import Group
 from django.test import Client as Navigateur, TestCase, override_settings
 from django.urls import reverse
 
-from ..models import Employe
+from ..models import AffectationEmployeSuccursale, Employe
 from ..permissions import PERMISSION_BASE, PERMISSION_GERANT
 
 
@@ -32,14 +32,14 @@ class AdministrationEmployesTests(TestCase):
         self.assertNotContains(response, "/admin/auth/user/")
         response = self.client.get(reverse("admin:CafeDolbeau_employe_changelist"))
         self.assertContains(response, "administrateur")
-        self.assertContains(response, "Gérant")
+        self.assertContains(response, "Superutilisateur")
 
     def test_formulaire_creation_demande_un_role_obligatoire(self):
         response = self.client.get(self.url_ajout)
         self.assertContains(response, "Ajouter employé")
         form = response.context["adminform"].form
         self.assertTrue(form.fields["role"].required)
-        self.assertEqual(set(form.fields["role"].queryset.values_list("name", flat=True)), {"Barista", "Gérant"})
+        self.assertEqual(set(form.fields["role"].queryset.values_list("name", flat=True)), {"Barista", "Gérant", "Propriétaire"})
         self.assertFalse(form["role"].value())
 
     @override_settings(AUTH_PASSWORD_VALIDATORS=[])
@@ -49,7 +49,7 @@ class AdministrationEmployesTests(TestCase):
                 username = "nouveau-barista" if role == "Barista" else "nouveau-gerant"
                 response = self.client.post(self.url_ajout, self.donnees_creation(username, role))
                 employe = Employe.objects.get(username=username)
-                self.assertRedirects(response, reverse("admin:CafeDolbeau_employe_change", args=[employe.pk]))
+                self.assertRedirects(response, reverse("admin:CafeDolbeau_employe_changelist"))
                 self.assertEqual(list(employe.groups.values_list("name", flat=True)), [role])
                 self.assertTrue(employe.check_password("123"))
                 self.assertNotEqual(employe.password, "123")
@@ -150,25 +150,28 @@ class AdministrationEmployesTests(TestCase):
         self.assertFalse(Employe.objects.filter(username="nouvel-employe").exists())
 
     @override_settings(AUTH_PASSWORD_VALIDATORS=[])
-    def test_gerant_peut_creer_les_deux_roles_sans_privileges_avances(self):
+    def test_gerant_cree_uniquement_des_baristas_dans_ses_succursales(self):
         gerant = Employe.objects.create_user("gerant-createur")
         gerant.groups.add(Group.objects.get(name="Gérant"))
+        AffectationEmployeSuccursale.objects.create(employe_id=gerant.pk, succursale_id=1)
         self.client.force_login(gerant)
-        self.assertContains(self.client.get(reverse("admin:index")), self.url_ajout)
         self.assertEqual(self.client.get(self.url_ajout).status_code, 200)
-        for role in ("Barista", "Gérant"):
+        for role in ("Barista", "Gérant", "Propriétaire"):
             with self.subTest(role=role):
                 donnees = self.donnees_creation("cree-par-gerant-" + role, role)
-                donnees.update(is_superuser="on", is_staff="on",
+                donnees.update(succursales=[1], is_superuser="on", is_staff="on",
                                user_permissions=[1], groups=[Group.objects.get(name="Gérant").pk])
                 response = self.client.post(self.url_ajout, donnees)
-                self.assertRedirects(response, reverse("admin:index"))
+                if role != "Barista":
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn("role", response.context["adminform"].form.errors)
+                    self.assertFalse(Employe.objects.filter(username=donnees["username"]).exists())
+                    continue
+                self.assertRedirects(response, reverse("admin:CafeDolbeau_employe_changelist"))
                 employe = Employe.objects.get(username=donnees["username"])
                 self.assertTrue(employe.check_password("123"))
                 self.assertFalse(employe.is_superuser)
                 self.assertFalse(employe.is_staff)
                 self.assertFalse(employe.user_permissions.exists())
-                self.assertEqual(list(employe.groups.values_list("name", flat=True)), [role])
-                url = reverse("admin:CafeDolbeau_employe_change", args=[employe.pk])
-                self.assertEqual(self.client.get(url).status_code, 403)
-                self.assertEqual(self.client.post(url, {"is_superuser": "on"}).status_code, 403)
+                self.assertEqual(list(employe.groups.values_list("name", flat=True)), ["Barista"])
+                self.assertEqual(list(employe.affectations_succursales.values_list("succursale_id", flat=True)), [1])

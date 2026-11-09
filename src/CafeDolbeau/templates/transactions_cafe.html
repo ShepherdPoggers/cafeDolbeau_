@@ -10,7 +10,7 @@
                     <small>Active</small>
                     {% endif %}
                 </div>
-                <form method="get" action="{% url 'annuler_transaction' transaction.client_id transaction.pk %}">
+                <form method="get" action="{% url 'annuler_transaction' request.succursale.pk transaction.client_id transaction.pk %}">
                     <button class="bouton-annuler" type="submit" aria-label="Annuler l’opération de la transaction {{ transaction.pk }}"{% if not transaction.annulation_disponible %} disabled title="Opération déjà annulée ou réservée à son auteur et aux gérants"{% endif %}>Annuler</button>
                 </form>
             </li>

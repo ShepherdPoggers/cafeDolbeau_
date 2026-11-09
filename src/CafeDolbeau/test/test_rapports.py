@@ -10,7 +10,7 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from ..forms.forms_rapports import RapportForm
-from ..models import AnnulationTransaction, Client, Employe, TransactionCafe
+from ..models import AffectationEmployeSuccursale, AnnulationTransaction, Client, Employe, TransactionCafe
 from ..rapports import FUSEAU_RAPPORT, generer_rapport
 
 
@@ -18,9 +18,10 @@ class RapportsTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.gerant = Employe.objects.create_user("gerant-rapports")
-        cls.gerant.groups.add(Group.objects.get(name="Gérant"))
+        cls.gerant.groups.add(Group.objects.get(name="Propriétaire"))
         cls.barista = Employe.objects.create_user("barista-rapports")
         cls.barista.groups.add(Group.objects.get(name="Barista"))
+        AffectationEmployeSuccursale.objects.create(employe_id=cls.barista.pk, succursale_id=1)
         cls.personne = Client.objects.create(nom_complet="Camille", telephone="418 555-1111")
 
     def setUp(self):
@@ -58,7 +59,7 @@ class RapportsTests(TestCase):
         contenu = b"".join(response.streaming_content)
         return load_workbook(BytesIO(contenu)), response
 
-    def test_acces_page_et_export_reserves_aux_gerants(self):
+    def test_acces_page_et_export_reserves_aux_proprietaires(self):
         for nom in ("rapports", "rapport_excel"):
             with self.subTest(nom=nom):
                 url = reverse(nom)
@@ -70,10 +71,10 @@ class RapportsTests(TestCase):
                 self.assertEqual(self.client.get(url).status_code, 200)
                 self.assertEqual(self.client.post(url).status_code, 405)
 
-    def test_lien_entete_visible_uniquement_au_gerant(self):
-        self.assertContains(self.client.get(reverse("accueil")), 'action="/rapports/"')
+    def test_lien_entete_visible_uniquement_au_proprietaire(self):
+        self.assertContains(self.client.get(reverse("accueil_succursale", args=[1])), 'action="/rapports/"')
         self.client.force_login(self.barista)
-        self.assertNotContains(self.client.get(reverse("accueil")), 'action="/rapports/"')
+        self.assertNotContains(self.client.get(reverse("accueil_succursale", args=[1])), 'action="/rapports/"')
 
     def test_valeurs_initiales_et_niveau_avant_periode(self):
         response = self.client.get(reverse("rapports"))

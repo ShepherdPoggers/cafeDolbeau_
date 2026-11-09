@@ -9,7 +9,7 @@ from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from ..models import AnnulationTransaction, Client, Employe, ParametresCafe, TransactionCafe
+from ..models import AffectationEmployeSuccursale, AnnulationTransaction, Client, Employe, ParametresCafe, TransactionCafe
 from ..services import ajouter_cafes, annuler_operation
 
 
@@ -20,6 +20,8 @@ class ParametresCafeTests(TestCase):
         cls.gerant.groups.add(Group.objects.get(name="Gérant"))
         cls.barista = Employe.objects.create_user("barista-parametres")
         cls.barista.groups.add(Group.objects.get(name="Barista"))
+        for employe in (cls.barista, cls.gerant):
+            AffectationEmployeSuccursale.objects.create(employe_id=employe.pk, succursale_id=1)
         cls.personne = Client.objects.create(nom_complet="Camille", telephone="418 555-1111")
 
     def setUp(self):
@@ -37,7 +39,7 @@ class ParametresCafeTests(TestCase):
         })
 
     def achat(self, quantite, type_cafe="achat"):
-        return ajouter_cafes(self.personne, quantite, type_cafe, employe=self.barista)
+        return ajouter_cafes(self.personne, quantite, type_cafe, employe=self.barista, succursale_id=1)
 
     def test_configuration_initialisee_a_dix_et_unique(self):
         self.assertEqual(ParametresCafe.objects.count(), 1)
@@ -199,7 +201,7 @@ class ParametresCafeTests(TestCase):
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (7, 0, 1))
         self.regler(8)
-        annuler_operation(lignes[0].pk, self.barista)
+        annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (4, 2, 1))
 
@@ -211,7 +213,7 @@ class ParametresCafeTests(TestCase):
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_gratuits), (20, 2))
         self.assertEqual(list(TransactionCafe.objects.values()), avant)
         self.assertFalse(AnnulationTransaction.objects.exists())
-        annuler_operation(lignes[0].pk, self.barista)
+        annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_gratuits), (0, 0))
 
@@ -233,7 +235,7 @@ class ParametresCafeTests(TestCase):
             self.personne.refresh_from_db()
             self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_gratuits), (20, 2))
             self.assertEqual(list(TransactionCafe.objects.values()), avant)
-            annuler_operation(lignes[0].pk, self.barista)
+            annuler_operation(lignes[0].pk, self.barista, succursale_id=1)
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_gratuits), (0, 0))
 

@@ -7,7 +7,7 @@ from django.views.decorators.http import require_GET
 
 from ..forms.forms_rapports import RapportForm
 from ..models import TransactionCafe
-from ..permissions import gerant_requis
+from ..permissions import proprietaire_requis
 from ..rapports import FUSEAU_RAPPORT, exporter_excel, generer_rapport
 
 
@@ -22,7 +22,7 @@ def _formulaire(request):
 
 
 @never_cache
-@gerant_requis
+@proprietaire_requis
 @require_GET
 def rapports(request):
     form = _formulaire(request)
@@ -39,7 +39,7 @@ def rapports(request):
 
 
 @never_cache
-@gerant_requis
+@proprietaire_requis
 @require_GET
 def rapport_excel(request):
     form = _formulaire(request)

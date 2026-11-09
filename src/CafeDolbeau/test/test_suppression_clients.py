@@ -15,7 +15,7 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from ..forms.forms_annulation import SelectionAnciennesForm
-from ..models import AnnulationTransaction, Client, Employe, TransactionCafe
+from ..models import AnnulationTransaction, Client, Employe, Succursale, TransactionCafe
 from ..permissions import peut_annuler
 from ..rapports import exporter_excel, generer_rapport
 from ..services import ajouter_cafes, annuler_operation, supprimer_clients
@@ -39,7 +39,7 @@ class SuppressionClientTests(TestCase):
         self.liste = reverse("admin:CafeDolbeau_client_changelist")
 
     def operation(self, personne=None, quantite=1, type_cafe="achat"):
-        return ajouter_cafes(personne or self.personne, quantite, type_cafe, employe=self.barista)
+        return ajouter_cafes(personne or self.personne, quantite, type_cafe, employe=self.barista, succursale_id=1)
 
     def confirmer(self, url=None):
         url = url or self.url
@@ -49,7 +49,7 @@ class SuppressionClientTests(TestCase):
 
     def test_transfert_conserve_tous_les_champs_et_annulations(self):
         lignes = self.operation()
-        annuler_operation(lignes[0].pk, self.gerant)
+        annuler_operation(lignes[0].pk, self.gerant, succursale_id=1)
         avant = list(TransactionCafe.objects.order_by("pk").values())
         audits = list(AnnulationTransaction.objects.values())
         self.assertEqual(supprimer_clients([self.personne.pk], employe=self.gerant), 1)
@@ -103,7 +103,7 @@ class SuppressionClientTests(TestCase):
         with self.assertRaises(ValidationError):
             supprimer_clients([-1, self.autre.pk], employe=self.gerant)
         with self.assertRaises(ValidationError):
-            ajouter_cafes(fictif, 1, employe=self.gerant)
+            ajouter_cafes(fictif, 1, employe=self.gerant, succursale_id=1)
         self.assertTrue(Client.objects.filter(pk=self.autre.pk).exists())
         self.assertFalse(TransactionCafe.objects.exists())
         with self.assertRaises(ValidationError):
@@ -230,12 +230,12 @@ class SuppressionClientTests(TestCase):
         self.assertTrue(Client.objects.filter(pk=self.personne.pk).exists())
 
     def test_achat_http_client_supprime_apres_chargement_retourne_404(self):
-        def supprimer_avant_achat(client, quantite, type_transaction, *, employe):
+        def supprimer_avant_achat(client, quantite, type_transaction, *, employe, succursale_id):
             supprimer_clients([client.pk], employe=self.gerant)
-            return ajouter_cafes(client, quantite, type_transaction, employe=employe)
+            return ajouter_cafes(client, quantite, type_transaction, employe=employe, succursale_id=1)
 
         with patch("CafeDolbeau.views.views.ajouter_cafes", side_effect=supprimer_avant_achat):
-            response = self.client.post(reverse("ajouter_cafes", args=[self.personne.pk]), {
+            response = self.client.post(reverse("ajouter_cafes", args=[1, self.personne.pk]), {
                 "quantite": 1, "type_transaction": "achat",
             }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(response.status_code, 404)
@@ -243,12 +243,12 @@ class SuppressionClientTests(TestCase):
 
     def test_confirmation_annulation_puis_suppression_redirige_vers_admin(self):
         ligne = self.operation()[0]
-        url = reverse("annuler_transaction", args=[self.personne.pk, ligne.pk])
+        url = reverse("annuler_transaction", args=[1, self.personne.pk, ligne.pk])
         jeton = self.client.get(url).context["confirmation"]
 
-        def supprimer_avant_annulation(transaction_id, employe, details=None):
+        def supprimer_avant_annulation(transaction_id, employe, details=None, *, succursale_id):
             supprimer_clients([self.personne.pk], employe=self.gerant)
-            return annuler_operation(transaction_id, employe, details)
+            return annuler_operation(transaction_id, employe, details, succursale_id=1)
 
         with patch("CafeDolbeau.views.views.annuler_operation", side_effect=supprimer_avant_annulation):
             response = self.client.post(url, {"action": "confirmer", "confirmation": jeton})
@@ -292,7 +292,7 @@ class SuppressionClientTests(TestCase):
     def test_fictif_masque_dans_recherches_et_gestion_clients(self):
         supprimer_clients([self.personne.pk], employe=self.gerant)
         for parametres in ({}, {"q": "Client supprimé"}, {"q": "Client supprimé", "partiel": "recherche"}):
-            response = self.client.get(reverse("accueil"), parametres)
+            response = self.client.get(reverse("accueil_succursale", args=[1]), parametres)
             self.assertNotContains(response, '<td><span class="cell-text" title="Client supprimé">')
             self.assertFalse(response.context["resultats"].filter(pk=-1).exists())
         self.assertEqual(self.client.get(self.liste).context["cl"].result_count, 1)
@@ -307,9 +307,9 @@ class SuppressionClientTests(TestCase):
         lignes = self.operation(quantite=10, type_cafe="utilise")
         supprimer_clients([self.personne.pk], employe=self.gerant)
         source = TransactionCafe.objects.get(pk=lignes[0].pk)
-        self.assertFalse(peut_annuler(source, self.barista))
+        self.assertFalse(peut_annuler(source, self.barista, succursale_id=1))
         with self.assertRaises(PermissionDenied):
-            annuler_operation(source.pk, self.barista)
+            annuler_operation(source.pk, self.barista, succursale_id=1)
         url = reverse("annuler_transaction_admin", args=[source.pk])
         self.client.force_login(self.barista)
         self.assertEqual(self.client.get(url).status_code, 403)
@@ -324,7 +324,7 @@ class SuppressionClientTests(TestCase):
         self.assertEqual(AnnulationTransaction.objects.count(), len(lignes))
         fictif = Client.objects.get(pk=-1)
         self.assertEqual((fictif.nombre_cafes_achetes, fictif.nombre_cafes_prepayes, fictif.nombre_cafes_gratuits), (0, 0, 0))
-        ancien_url = reverse("annuler_transaction", args=[self.personne.pk, source.pk])
+        ancien_url = reverse("annuler_transaction", args=[1, self.personne.pk, source.pk])
         self.assertEqual(self.client.get(ancien_url).status_code, 404)
 
     def test_anciennes_transactions_ne_melangent_pas_deux_origines(self):
@@ -333,13 +333,13 @@ class SuppressionClientTests(TestCase):
         autre = TransactionCafe.objects.create(client=self.autre, quantite=1)
         supprimer_clients([self.personne.pk, self.autre.pk], employe=self.gerant)
         achat.refresh_from_db()
-        formulaire = SelectionAnciennesForm(client=achat.client, source=achat)
+        formulaire = SelectionAnciennesForm(client=achat.client, source=achat, employe=self.gerant)
         self.assertEqual(set(formulaire.fields["lignes"].queryset.values_list("pk", flat=True)), {achat.pk, consommation.pk})
         url = reverse("annuler_transaction_admin", args=[achat.pk])
         response = self.client.post(url, {"action": "completer", "lignes": [achat.pk, autre.pk]})
         self.assertTrue(response.context["selection"].errors)
         with self.assertRaises(ValidationError):
-            annuler_operation(achat.pk, self.gerant, {achat.pk: (2, 0, 0), autre.pk: (1, 0, 0)})
+            annuler_operation(achat.pk, self.gerant, {achat.pk: (2, 0, 0), autre.pk: (1, 0, 0)}, succursale_id=1)
         valeurs = {achat.pk: (2, 0, 0), consommation.pk: (0, -1, -2)}
         donnees = {
             "action": "previsualiser", "lignes": list(valeurs), "form-TOTAL_FORMS": 2,
@@ -364,7 +364,7 @@ class SuppressionClientTests(TestCase):
     def test_admin_transactions_transferees_et_rapports_excel_conserves(self):
         self.operation()
         self.operation(quantite=1, type_cafe="prepaye")
-        annuler_operation(TransactionCafe.objects.first().pk, self.gerant)
+        annuler_operation(TransactionCafe.objects.first().pk, self.gerant, succursale_id=1)
         jour = timezone.localdate()
 
         def rapport():
@@ -387,6 +387,7 @@ class SuppressionClientTests(TestCase):
 
 class SuppressionConcurrenceTests(TransactionTestCase):
     def setUp(self):
+        Succursale.objects.get_or_create(pk=1, defaults={"nom": "Succursale #1"})
         self.gerant = creer_employe("gerant-concurrence-suppression", "Gérant")
         self.barista = creer_employe("barista-concurrence-suppression")
         self.personne = Client.objects.create(nom_complet="Camille", telephone="418 555-1000")
@@ -406,7 +407,7 @@ class SuppressionConcurrenceTests(TransactionTestCase):
             return list(pool.map(executer, fonctions))
 
     def test_deux_suppressions_un_seul_journal(self):
-        ligne = ajouter_cafes(self.personne, 1, employe=self.barista)[0]
+        ligne = ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)[0]
         resultats = self.simultanement([
             lambda: supprimer_clients([self.personne.pk], employe=self.gerant),
             lambda: supprimer_clients([self.personne.pk], employe=self.gerant),
@@ -420,7 +421,7 @@ class SuppressionConcurrenceTests(TransactionTestCase):
     def test_achat_concurrent_conserve_achat_ou_refuse_client_disparu(self):
         def acheter():
             try:
-                return ajouter_cafes(self.personne, 1, employe=self.barista)
+                return ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)
             except Client.DoesNotExist:
                 return []
 
@@ -433,10 +434,10 @@ class SuppressionConcurrenceTests(TransactionTestCase):
         self.assertEqual(Client.objects.get(pk=-1).nombre_cafes_achetes, 0)
 
     def test_annulation_concurrente_conserve_trace_et_fictif_a_zero(self):
-        ligne = ajouter_cafes(self.personne, 1, employe=self.barista)[0]
+        ligne = ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)[0]
         self.simultanement([
             lambda: supprimer_clients([self.personne.pk], employe=self.gerant),
-            lambda: annuler_operation(ligne.pk, self.gerant),
+            lambda: annuler_operation(ligne.pk, self.gerant, succursale_id=1),
         ])
         ligne.refresh_from_db()
         self.assertEqual((ligne.client_id, ligne.client_origine_id), (-1, self.personne.pk))
@@ -446,8 +447,8 @@ class SuppressionConcurrenceTests(TransactionTestCase):
 
     def test_suppressions_clients_distincts_partagent_fictif(self):
         autre = Client.objects.create(nom_complet="Alex", telephone="418 555-2000")
-        ajouter_cafes(self.personne, 1, employe=self.barista)
-        ajouter_cafes(autre, 1, employe=self.barista)
+        ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)
+        ajouter_cafes(autre, 1, employe=self.barista, succursale_id=1)
         self.assertEqual(self.simultanement([
             lambda: supprimer_clients([self.personne.pk], employe=self.gerant),
             lambda: supprimer_clients([autre.pk], employe=self.gerant),

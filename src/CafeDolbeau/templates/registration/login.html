@@ -11,7 +11,7 @@
 {% include "en_tete.html" %}
 <main class="cafe-content connexion-content">
     <h1>Connexion</h1>
-    <p>Connectez-vous avec votre compte de barista ou de gérant.</p>
+    <p>Connectez-vous avec votre compte de barista, de gérant ou de propriétaire.</p>
     <form method="post" action="{% url 'connexion' %}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next }}">

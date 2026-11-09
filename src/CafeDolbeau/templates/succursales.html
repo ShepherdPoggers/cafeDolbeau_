@@ -1,0 +1,24 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
+    <title>Café Dolbeau — Succursales</title>
+</head>
+<body class="cafe-page">
+{% include "en_tete.html" %}
+<main class="cafe-content">
+    <h1>Succursales</h1>
+    <p>Ouvrez la succursale où vous travaillez. Son nom restera affiché pendant les opérations.</p>
+    <ul>
+        {% for succursale in succursales %}
+        <li><a href="{% url 'accueil_succursale' succursale.pk %}">{{ succursale.nom }}</a></li>
+        {% empty %}
+        <li>Aucune succursale ne vous est attribuée. Contactez un responsable.</li>
+        {% endfor %}
+    </ul>
+</main>
+</body>
+</html>

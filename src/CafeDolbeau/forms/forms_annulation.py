@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from ..models import TransactionCafe
+from ..permissions import transactions_administrables
 from ..services import filtrer_meme_origine, valider_effets
 
 
@@ -18,10 +19,10 @@ class SelectionAnciennesForm(forms.Form):
         widget=forms.CheckboxSelectMultiple,
     )
 
-    def __init__(self, *args, client, source, **kwargs):
+    def __init__(self, *args, client, source, employe, **kwargs):
         super().__init__(*args, **kwargs)
         self.source = source
-        self.fields["lignes"].queryset = filtrer_meme_origine(TransactionCafe.objects.filter(
+        self.fields["lignes"].queryset = filtrer_meme_origine(transactions_administrables(employe).filter(
             client=client, operation_id__isnull=True, annulation__isnull=True,
         ), source)
         if not self.is_bound:

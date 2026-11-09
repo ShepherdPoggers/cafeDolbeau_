@@ -10,6 +10,10 @@ def detacher_clients_supprimes(apps, schema_editor):
     fusions = FusionClient.objects.using(alias)
     fusions.exclude(client_source_id__in=clients).update(client_source_id=None)
     fusions.exclude(client_destination_id__in=clients).update(client_destination_id=None)
+    if schema_editor.connection.vendor == "postgresql":
+        # Exécuter les vérifications différées avant les ALTER TABLE suivants,
+        # tout en conservant la migration dans une seule transaction.
+        schema_editor.connection.check_constraints()
 
 
 class Migration(migrations.Migration):

@@ -16,6 +16,7 @@ def initialiser(version="V2"):
         parser.error("Le dossier de destination doit exister.")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings"
+    os.environ["CAFE_DB_ENGINE"] = "sqlite"
     os.environ["CAFE_DB_PATH"] = str(chemin)
     import django
     django.setup()
@@ -36,9 +37,12 @@ def comptes():
 
 def attribuer_roles(utilisateurs):
     from django.contrib.auth.models import Group
+    from CafeDolbeau.models import AffectationEmployeSuccursale
     for nom, utilisateur in utilisateurs.items():
-        role = "Gérant" if nom == "gerant_test" else "Barista"
+        role = "Propriétaire" if nom == "proprietaire_test" else "Gérant" if nom == "gerant_test" else "Barista"
         utilisateur.groups.add(Group.objects.get(name=role))
+        if role != "Propriétaire":
+            AffectationEmployeSuccursale.objects.create(employe_id=utilisateur.pk, succursale_id=1)
 
 
 def terminer():

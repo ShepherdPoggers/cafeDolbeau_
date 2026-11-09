@@ -11,7 +11,7 @@
 <body class="cafe-page">
 {% include "en_tete.html" %}
 <div class="cafe-layout">
-    <form class="back-home" method="get" action="{% url 'accueil' %}">
+    <form class="back-home" method="get" action="{% url 'accueil_succursale' request.succursale.pk %}">
         <button type="submit">Retour à l’accueil</button>
     </form>
 <main class="cafe-content">
@@ -31,7 +31,7 @@
     {% endfor %}
     </div>
     <h2>Ajouter des cafés achetés</h2>
-    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
+    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' request.succursale.pk client.pk %}">
         {% csrf_token %}
         {{ form.as_p }}
         <div class="erreurs-cafes" role="alert"></div>
@@ -40,7 +40,7 @@
 
     </form>
     <h2>Acheter des cartes de cafés</h2>
-    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' client.pk %}">
+    <form class="form-cafes" method="post" action="{% url 'ajouter_cafes' request.succursale.pk client.pk %}">
         {% csrf_token %}
         {{ form_prepaye.as_p }}
         <div class="erreurs-cafes" role="alert"></div>

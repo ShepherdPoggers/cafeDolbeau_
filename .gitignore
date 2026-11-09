@@ -60,6 +60,8 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+# Sauvegardes et exports de données avant migration.
+backups/
 
 # Flask stuff:
 instance/

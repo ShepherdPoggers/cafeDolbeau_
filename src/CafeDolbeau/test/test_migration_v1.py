@@ -44,6 +44,7 @@ class MigrationV1Tests(TransactionTestCase):
                 transactions_avant,
             )
             self.assertFalse(NouvelleTransaction.objects.exclude(
+                succursale_id=1,
                 employe__isnull=True, operation_id__isnull=True, variation_achetes__isnull=True,
                 variation_gratuits__isnull=True, variation_prepayes__isnull=True,
             ).exists())
