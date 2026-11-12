@@ -16,11 +16,12 @@ from ..permissions import (
     PERMISSION_GERANT, acces_base_requis, gerant_requis, peut_annuler,
     peut_intervenir_transaction, succursale_requise, succursales_autorisees,
 )
+from ..promotions import contexte_promotion
 from ..services import ajouter_cafes, annuler_operation, preparer_annulation, recapitulatif_annulation
 
 
 def historique_client(client, employe, *, succursale_id):
-    lignes = list(client.transactions_cafe.select_related("employe", "annulation__employe")[:10])
+    lignes = list(client.transactions_cafe.select_related("employe", "promotion", "annulation__employe")[:10])
     for ligne in lignes:
         ligne.annulation_disponible = peut_annuler(ligne, employe, succursale_id=succursale_id)
     return lignes
@@ -71,6 +72,12 @@ def ajouter_cafes_client(request, pk):
         if fusion and Client.objects.filter(pk=fusion.client_destination_id, est_actif=True).exists():
             return redirect("ajouter_cafes", pk=fusion.client_destination_id, succursale_id=request.succursale.pk)
         raise Http404
+    if request.method == "GET" and request.GET.get("partiel") == "promotion":
+        return JsonResponse({
+            "promotion_html": render_to_string("compteur_promotion.html", {
+                "promotion": contexte_promotion(client, request.succursale.pk),
+            }),
+        })
     asynchrone = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     formulaires = {
         TransactionCafe.Type.ACHAT: AjoutCafesForm(),
@@ -103,6 +110,7 @@ def ajouter_cafes_client(request, pk):
                     "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
                     "transactions": historique_client(client, request.user, succursale_id=request.succursale.pk),
                     "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),
+                    "promotion": contexte_promotion(client, request.succursale.pk),
                 }, status=400)
             messages.success(request, "La transaction de cafés a été enregistrée.")
             gratuits = sum(t.quantite for t in transactions if t.type_transaction == TransactionCafe.Type.GRATUIT)
@@ -116,6 +124,9 @@ def ajouter_cafes_client(request, pk):
                     "achetes": client.nombre_cafes_achetes,
                     "prepayes": client.nombre_cafes_prepayes,
                     "gratuits": client.nombre_cafes_gratuits,
+                    "promotion_html": render_to_string("compteur_promotion.html", {
+                        "promotion": contexte_promotion(client, request.succursale.pk),
+                    }),
                     "fusion_en_attente": FusionClient.en_attente_pour(client.pk).exists(),
                     "messages": [
                         {"texte": str(message), "tags": message.tags}
@@ -138,6 +149,7 @@ def ajouter_cafes_client(request, pk):
         "form_prepaye": formulaires[TransactionCafe.Type.PREPAYE],
         "transactions": historique_client(client, request.user, succursale_id=request.succursale.pk),
         "fusion_en_attente": FusionClient.en_attente_pour(client.pk).first(),
+        "promotion": contexte_promotion(client, request.succursale.pk),
     })
 
 

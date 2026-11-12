@@ -1,9 +1,9 @@
-"""Transférer une base SQLite à jour vers une base PostgreSQL sans tables."""
+"""Migrer une copie de SQLite et la transférer vers PostgreSQL sans modifier l'original."""
 
 import argparse
 from collections import Counter
 from contextlib import closing
-from io import StringIO
+from datetime import datetime, time
 import json
 import os
 from pathlib import Path
@@ -17,17 +17,38 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.serializers.base import DeserializationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connections, DatabaseError, models, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.exceptions import InconsistentMigrationHistory
+from django.db.migrations.recorder import MigrationRecorder
+from django.utils import timezone
 
 
-def exporter(alias):
-    sortie = StringIO()
-    call_command(
-        "dumpdata", database=alias, use_base_manager=True,
-        stdout=sortie, verbosity=0, skip_checks=True,
+ERREUR_DESTINATION = (
+    "La destination contient des données, une configuration personnalisée ou des tables étrangères. "
+    "Utilisez une base vide ou initialisée uniquement par migrate ; aucun écrasement n'est effectué."
+)
+
+
+class EncodeurDatesExactes(DjangoJSONEncoder):
+    def default(self, valeur):
+        # L'encodeur Django standard tronque les microsecondes en millisecondes.
+        if isinstance(valeur, (datetime, time)):
+            return valeur.isoformat()
+        return super().default(valeur)
+
+
+def exporter(alias, *, naturelles=False):
+    def objets():
+        for modele in apps.get_models():
+            if modele._meta.managed and not modele._meta.proxy:
+                yield from modele._base_manager.using(alias).order_by(modele._meta.pk.name).iterator()
+
+    return serializers.serialize(
+        "json", objets(), cls=EncodeurDatesExactes,
+        use_natural_foreign_keys=naturelles, use_natural_primary_keys=naturelles,
     )
-    return sortie.getvalue()
 
 
 def normaliser(donnees):
@@ -37,6 +58,63 @@ def normaliser(donnees):
         for champ in modele._meta.many_to_many:
             ligne["fields"][champ.name].sort()
     return sorted(lignes, key=lambda ligne: (ligne["model"], str(ligne["pk"])))
+
+
+def configuration_initiale(alias):
+    """Compare les valeurs initiales indépendamment des identifiants des permissions."""
+    lignes = json.loads(exporter(alias, naturelles=True))
+    initialisation = MigrationRecorder(connections[alias]).migration_qs.get(
+        app="CafeDolbeau", name="0015_date_application_gratuite",
+    ).applied
+    date_initiale = timezone.localdate(initialisation).isoformat()
+    for ligne in lignes:
+        modele = apps.get_model(ligne["model"])
+        # Une base initialisée hier reste une base initiale. Une date modifiée
+        # manuellement, en revanche, doit être conservée et bloque le transfert.
+        if modele._meta.model_name == "parametrescafe" and ligne["fields"]["date_application"] == date_initiale:
+            ligne["fields"]["date_application"] = "date de la migration initiale"
+        for champ in modele._meta.many_to_many:
+            ligne["fields"][champ.name].sort()
+    return sorted(json.dumps(ligne, sort_keys=True) for ligne in lignes)
+
+
+def migrer(alias):
+    connexion = connections[alias]
+    executor = MigrationExecutor(connexion)
+    try:
+        executor.loader.check_consistent_history(connexion)
+    except InconsistentMigrationHistory as erreur:
+        raise CommandError(f"L'historique des migrations est incohérent : {erreur}") from erreur
+    if set(executor.loader.applied_migrations) - set(executor.loader.disk_migrations):
+        raise CommandError("La base contient des migrations inconnues de cette version du code.")
+    call_command("migrate", database=alias, interactive=False, verbosity=0, skip_checks=True)
+    connexion.check_constraints()
+
+
+def verrouiller_destination(cible):
+    """N'accepte que les tables Django attendues, sans données ajoutées."""
+    tables = cible.introspection.table_names()
+    if not tables:
+        return False
+    attendues = {
+        modele._meta.db_table for modele in apps.get_models(include_auto_created=True)
+        if modele._meta.managed
+    } | {"django_migrations"}
+    if set(tables) - attendues:
+        raise CommandError(ERREUR_DESTINATION)
+    valeurs_initiales = {
+        "django_migrations", "django_content_type", "auth_permission", "auth_group",
+        "auth_group_permissions", "CafeDolbeau_parametrescafe", "CafeDolbeau_succursale",
+    }
+    with cible.cursor() as curseur:
+        noms = ", ".join(cible.ops.quote_name(table) for table in tables)
+        curseur.execute(f"LOCK TABLE {noms} IN ACCESS EXCLUSIVE MODE")
+        for table in tables:
+            if table not in valeurs_initiales:
+                curseur.execute(f"SELECT EXISTS(SELECT 1 FROM {cible.ops.quote_name(table)})")
+                if curseur.fetchone()[0]:
+                    raise CommandError(ERREUR_DESTINATION)
+    return True
 
 
 def ajuster_sequences(connexion):
@@ -71,8 +149,9 @@ def transferer(chemin_source, *, destination="default"):
         raise CommandError("La destination doit utiliser PostgreSQL.")
 
     alias = "sqlite_transfert"
-    if alias in connections:
-        raise CommandError("Une connexion sqlite_transfert existe déjà.")
+    reference = "sqlite_reference_transfert"
+    if alias in connections or reference in connections:
+        raise CommandError("Une connexion SQLite de transfert existe déjà.")
 
     with TemporaryDirectory(prefix="cafe-transfert-") as dossier:
         copie = Path(dossier) / "source.sqlite3"
@@ -84,9 +163,9 @@ def transferer(chemin_source, *, destination="default"):
         configuration = cible.settings_dict.copy()
         configuration.update(
             ENGINE="django.db.backends.sqlite3",
-            NAME=f"{copie.as_uri()}?mode=ro",
+            NAME=str(copie),
             USER="", PASSWORD="", HOST="", PORT="",
-            OPTIONS={"uri": True}, CONN_MAX_AGE=0,
+            OPTIONS={}, CONN_MAX_AGE=0,
         )
         connections.databases[alias] = configuration
         try:
@@ -96,12 +175,8 @@ def transferer(chemin_source, *, destination="default"):
                 if curseur.fetchall() != [("ok",)]:
                     raise CommandError("La vérification du fichier SQLite a échoué.")
             connexion_source.check_constraints()
-            executor = MigrationExecutor(connexion_source)
-            executor.loader.check_consistent_history(connexion_source)
-            if executor.migration_plan(executor.loader.graph.leaf_nodes()):
-                raise CommandError(
-                    "La source SQLite n'est pas à jour. Appliquez ses migrations avant le transfert."
-                )
+            # Seule cette copie privée est mise à jour, jamais le fichier source.
+            migrer(alias)
             donnees = exporter(alias)
             attendu = normaliser(donnees)
 
@@ -110,19 +185,17 @@ def transferer(chemin_source, *, destination="default"):
                     curseur.execute("SELECT pg_try_advisory_xact_lock(%s)", [73758639])
                     if not curseur.fetchone()[0]:
                         raise CommandError("Un autre transfert est déjà en cours.")
-                    if cible.introspection.table_names():
-                        raise CommandError(
-                            "La destination contient déjà des tables. "
-                            "Choisissez une base PostgreSQL vide ; aucun écrasement n'est effectué."
-                        )
-
-                call_command(
-                    "migrate", database=destination, interactive=False,
-                    verbosity=0, skip_checks=True,
-                )
-                cible.check_constraints()
+                deja_initialisee = verrouiller_destination(cible)
+                migrer(destination)
+                if deja_initialisee:
+                    configuration_reference = configuration.copy()
+                    configuration_reference["NAME"] = str(Path(dossier) / "reference.sqlite3")
+                    connections.databases[reference] = configuration_reference
+                    migrer(reference)
+                    if configuration_initiale(destination) != configuration_initiale(reference):
+                        raise CommandError(ERREUR_DESTINATION)
                 # Remplacer seulement les valeurs initiales des migrations,
-                # dans cette base qui était vide avant notre transaction.
+                # après vérification qu'aucune donnée ajoutée ne sera écrasée.
                 tables = [
                     cible.ops.quote_name(table)
                     for table in cible.introspection.table_names()
@@ -140,9 +213,11 @@ def transferer(chemin_source, *, destination="default"):
 
             return Counter(ligne["model"] for ligne in attendu)
         finally:
-            connections[alias].close()
-            del connections[alias]
-            del connections.databases[alias]
+            for temporaire in (alias, reference):
+                if temporaire in connections:
+                    connections[temporaire].close()
+                    del connections[temporaire]
+                    del connections.databases[temporaire]
             ContentType.objects.clear_cache()
 
 
@@ -151,8 +226,9 @@ def main():
         description=__doc__,
         epilog=(
             "Arrêtez Django avant le transfert. La destination est configurée par "
-            "POSTGRES_* dans .env et ne doit contenir aucune table. "
-            "Le script crée le schéma et annule tout le transfert en cas d'erreur."
+            "POSTGRES_* dans .env et doit être vide ou contenir uniquement les valeurs initiales de migrate. "
+            "Le script met à jour une copie temporaire de SQLite, crée le schéma PostgreSQL et annule "
+            "tout le transfert en cas d'erreur. Le fichier SQLite original reste inchangé."
         ),
     )
     parser.add_argument("--source", required=True, type=Path, help="Fichier SQLite à transférer.")

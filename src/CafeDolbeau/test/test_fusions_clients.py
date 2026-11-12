@@ -280,7 +280,7 @@ class FusionClientTests(TestCase):
         self.assertFalse(AnnulationTransaction.objects.exists())
 
     def test_operations_transferees_restent_groupees_apres_finalisation(self):
-        Client.objects.filter(pk=self.source.pk).update(nombre_cafes_achetes=9)
+        Client.objects.filter(pk=self.source.pk).update(nombre_cafes_fidelite=9, nombre_cafes_achetes=9)
         deplacees = self.acheter(self.source)
         self.assertEqual(len(deplacees), 2)
         self.fusionner()
@@ -707,11 +707,17 @@ class FusionMigrationTests(TransactionTestCase):
                 attendue = {champ: valeur for champ, valeur in fusion.items() if champ not in ("source_nom", "destination_nom")}
                 attendue["client_source_id"] = source.pk if fusion["client_source_id"] == source.pk else None
                 attendue["client_destination_id"] = destination.pk if fusion["client_destination_id"] == destination.pk else None
+                for champ in ("soldes_source", "soldes_destination"):
+                    attendue[champ] = {**attendue[champ], "nombre_cafes_fidelite": attendue[champ].get("nombre_cafes_achetes", 0)}
+                attendue.update(promotions_source={}, promotions_destination={}, promotions_fusionnees={})
                 attendues.append(attendue)
             self.assertEqual(list(FusionClient.objects.order_by("pk").values()), attendues)
-            self.assertEqual(list(Client.objects.order_by("pk").values()), clients)
+            self.assertEqual(list(Client.objects.order_by("pk").values()), [
+                {**client, "nombre_cafes_fidelite": client["nombre_cafes_achetes"]} for client in clients
+            ])
             self.assertEqual(list(TransactionCafe.objects.values()), [
-                {**ligne, "succursale_id": 1} for ligne in transactions
+                {**ligne, "succursale_id": 1, "promotion_id": None, "variation_fidelite": ligne["variation_achetes"],
+                 "variation_progression_promotion": 0, "variation_gratuits_promotion": 0} for ligne in transactions
             ])
             self.assertEqual(str(FusionClient.objects.get(pk=fusions[0]["id"])), "Source actuelle → Destination actuelle")
             connection.check_constraints()
@@ -738,9 +744,10 @@ class FusionMigrationTests(TransactionTestCase):
             lignes = list(AncienneTransaction.objects.values())
             annulations = list(AncienneAnnulation.objects.values())
             MigrationExecutor(connection).migrate(dernier_schema)
-            self.assertEqual(list(Client.objects.values()), [{**client, "est_actif": client["id"] != -1} for client in clients])
+            self.assertEqual(list(Client.objects.values()), [{**client, "est_actif": client["id"] != -1, "nombre_cafes_fidelite": client["nombre_cafes_achetes"]} for client in clients])
             self.assertEqual(list(TransactionCafe.objects.values()), [
-                {**ligne, "succursale_id": 1} for ligne in lignes
+                {**ligne, "succursale_id": 1, "promotion_id": None, "variation_fidelite": ligne["variation_achetes"],
+                 "variation_progression_promotion": 0, "variation_gratuits_promotion": 0} for ligne in lignes
             ])
             self.assertEqual(list(AnnulationTransaction.objects.values()), annulations)
             self.assertFalse(FusionClient.objects.exists())

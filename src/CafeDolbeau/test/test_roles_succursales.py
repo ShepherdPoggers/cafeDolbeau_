@@ -262,6 +262,12 @@ class MigrationAffectationsTests(TransactionTestCase):
             compte.groups.add(groupe)
             employes.append(compte.pk)
         sans_role = User.objects.create(username="sans-role-migration")
+        groupe_personnalise, _ = Groupe.objects.get_or_create(name="Équipe de formation")
+        User.objects.get(pk=employes[0]).groups.add(groupe_personnalise)
+        sans_role.groups.add(groupe_personnalise)
+        groupes_avant = list(User.groups.through.objects.order_by("user_id", "group_id").values_list(
+            "user_id", "group_id",
+        ))
         client = AncienClient.objects.create(nom_complet="Migration", telephone="111", nombre_cafes_achetes=5)
         AncienneTransaction.objects.create(client=client, quantite=5, employe_id=employes[0])
         comptes = list(User.objects.order_by("pk").values())
@@ -269,8 +275,14 @@ class MigrationAffectationsTests(TransactionTestCase):
         clients = list(AncienClient.objects.values())
         MigrationExecutor(connection).migrate(dernier)
         self.assertEqual(list(Employe.objects.order_by("pk").values()), comptes)
-        self.assertEqual(list(Client.objects.values()), clients)
-        self.assertEqual(list(TransactionCafe.objects.values()), lignes)
+        self.assertEqual(list(Employe.groups.through.objects.order_by("user_id", "group_id").values_list(
+            "user_id", "group_id",
+        )), groupes_avant)
+        self.assertTrue(Employe.objects.get(pk=employes[0]).groups.filter(name="Barista").exists())
+        self.assertTrue(Employe.objects.get(pk=employes[1]).groups.filter(name="Gérant").exists())
+        self.assertEqual(list(Client.objects.values(*clients[0])), clients)
+        self.assertEqual(Client.objects.get(pk=client.pk).nombre_cafes_fidelite, 5)
+        self.assertEqual(list(TransactionCafe.objects.values(*lignes[0])), lignes)
         self.assertEqual(set(AffectationEmployeSuccursale.objects.values_list("employe_id", "succursale_id")), {(pk, 1) for pk in employes})
         self.assertFalse(AffectationEmployeSuccursale.objects.filter(employe_id=sans_role.pk).exists())
         self.assertFalse(Employe.objects.filter(groups__name="Propriétaire").exists())

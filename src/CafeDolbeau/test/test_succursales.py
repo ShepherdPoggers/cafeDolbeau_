@@ -32,7 +32,7 @@ class SuccursaleTests(TestCase):
     def test_creation_directe_et_service_utilisent_la_succursale_un_par_defaut(self):
         directe = TransactionCafe.objects.create(client=self.personne, quantite=1)
         self.assertEqual(directe.succursale_id, 1)
-        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=9)
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_fidelite=9, nombre_cafes_achetes=9)
         lignes = ajouter_cafes(self.personne, 1, employe=self.barista, succursale_id=1)
         self.assertEqual({ligne.type_transaction for ligne in lignes}, {"achat", "gratuit"})
         self.assertEqual({ligne.succursale_id for ligne in lignes}, {1})
@@ -41,7 +41,7 @@ class SuccursaleTests(TestCase):
         for type_transaction, nombre_lignes in (("achat", 2), ("prepaye", 1), ("utilise", 3)):
             with self.subTest(type_transaction=type_transaction):
                 Client.objects.filter(pk=self.personne.pk).update(
-                    nombre_cafes_achetes=9, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1,
+                    nombre_cafes_fidelite=9, nombre_cafes_achetes=9, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1,
                 )
                 lignes = ajouter_cafes(
                     self.personne, 13, type_transaction, employe=self.barista,
@@ -228,8 +228,9 @@ class SuccursaleMigrationTests(TransactionTestCase):
 
         MigrationExecutor(connection).migrate(self.dernier_schema)
 
-        self.assertEqual(list(Client.objects.order_by("pk").values()), clients)
-        self.assertEqual(list(TransactionCafe.objects.order_by("pk").values()), [
+        self.assertEqual(list(Client.objects.order_by("pk").values(*clients[0])), clients)
+        self.assertEqual(Client.objects.get(pk=personne.pk).nombre_cafes_fidelite, 19)
+        self.assertEqual(list(TransactionCafe.objects.order_by("pk").values(*lignes[0], "succursale_id")), [
             {**ligne, "succursale_id": 1} for ligne in lignes
         ])
         self.assertEqual(list(AnnulationTransaction.objects.values()), annulations)

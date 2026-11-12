@@ -5,6 +5,52 @@
     const messages = document.getElementById("messages-cafes");
     let messageTimer;
     let pending = false;
+    const promotion = document.getElementById("compteur-promotion");
+    let promotionVersion = 0;
+    let refreshingPromotion = false;
+
+    function updatePromotion(html) {
+        if (promotion && typeof html === "string" && promotion.innerHTML !== html) {
+            promotion.innerHTML = html;
+        }
+    }
+
+    async function refreshPromotion() {
+        if (!promotion?.dataset.url || document.hidden || pending || refreshingPromotion) return;
+        const version = promotionVersion;
+        refreshingPromotion = true;
+        try {
+            const response = await fetch(promotion.dataset.url, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                cache: "no-store",
+            });
+            // Un achat plus récent a priorité sur une lecture déjà en cours.
+            if (version !== promotionVersion || pending) return;
+            if (response.redirected) {
+                window.location.assign(response.url);
+                return;
+            }
+            if (response.status === 403 || response.status === 404) {
+                updatePromotion("");
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            if (version === promotionVersion && !pending) updatePromotion(data.promotion_html);
+        } catch {
+            // Une panne temporaire sera retentée au prochain rafraîchissement.
+        } finally {
+            refreshingPromotion = false;
+        }
+    }
+
+    if (promotion?.dataset.url) {
+        setInterval(refreshPromotion, 15000);
+        document.addEventListener("visibilitychange", refreshPromotion);
+        window.addEventListener("focus", refreshPromotion);
+        window.addEventListener("pageshow", refreshPromotion);
+        refreshPromotion();
+    }
 
     const banner = document.querySelector(".site-banner");
     const updatePosition = () => {
@@ -33,6 +79,7 @@
             event.preventDefault();
             if (pending) return;
             pending = true;
+            promotionVersion += 1;
 
             // On récupère le bouton précis qui a été cliqué
             const submitter = event.submitter;
@@ -95,6 +142,8 @@
                         counters[2].textContent = `Total de cafés gratuits : ${data.gratuits}`;
                     }
                 }
+
+                updatePromotion(data.promotion_html);
 
                 const history = document.getElementById("transactions-cafes");
                 if (history) {

@@ -21,7 +21,7 @@ class EmployeConnecteMixin:
 class TransactionCafeTests(EmployeConnecteMixin, TestCase):
     def test_achat_hors_carte_preserve_le_solde_et_accorde_la_gratuite(self):
         Client.objects.filter(pk=self.personne.pk).update(
-            nombre_cafes_achetes=9, nombre_cafes_prepayes=11,
+            nombre_cafes_fidelite=9, nombre_cafes_achetes=9, nombre_cafes_prepayes=11,
         )
         response = self.client.post(self.url, {
             "quantite": 3, "type_transaction": "achat",
@@ -86,7 +86,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         ):
             with self.subTest(total=total, quantite=quantite):
                 Client.objects.filter(pk=self.personne.pk).update(
-                    nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
+                    nombre_cafes_fidelite=total, nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
                     nombre_cafes_gratuits=0,
                 )
                 transactions = ajouter_cafes(self.personne, quantite, employe=self.employe, succursale_id=1)
@@ -103,7 +103,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
 
     def test_message_gratuit_et_solde_insuffisant(self):
         Client.objects.filter(pk=self.personne.pk).update(
-            nombre_cafes_achetes=9, nombre_cafes_prepayes=1
+            nombre_cafes_fidelite=9, nombre_cafes_achetes=9, nombre_cafes_prepayes=1
         )
         response = self.client.post(self.url, {"quantite": 4, "type_transaction": "utilise"}, follow=True)
         self.assertContains(response, "Fecilication un café gratuit est accordé")
@@ -116,7 +116,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         self.assertEqual(TransactionCafe.objects.count(), 3)
 
     def test_achat_cartes_inclut_la_gratuite_sans_ligne_supplementaire(self):
-        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=10)
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_fidelite=10, nombre_cafes_achetes=10)
         transactions = ajouter_cafes(self.personne, 2, TransactionCafe.Type.PREPAYE, employe=self.employe, succursale_id=1)
         self.personne.refresh_from_db()
         self.assertEqual(self.personne.nombre_cafes_achetes, 10)
@@ -136,7 +136,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
             for cartes in (1, 2, 3):
                 with self.subTest(total=total, cartes=cartes):
                     Client.objects.filter(pk=self.personne.pk).update(
-                        nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
+                        nombre_cafes_fidelite=total, nombre_cafes_achetes=total, nombre_cafes_prepayes=0,
                         nombre_cafes_gratuits=0,
                     )
                     transactions = ajouter_cafes(self.personne, cartes, TransactionCafe.Type.PREPAYE, employe=self.employe, succursale_id=1)
@@ -165,7 +165,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
 
     def test_echec_ligne_gratuite_annule_toute_la_commande(self):
         Client.objects.filter(pk=self.personne.pk).update(
-            nombre_cafes_achetes=10, nombre_cafes_prepayes=5
+            nombre_cafes_fidelite=10, nombre_cafes_achetes=10, nombre_cafes_prepayes=5
         )
         original_save = TransactionCafe.save
 
@@ -208,7 +208,7 @@ class TransactionCafeTests(EmployeConnecteMixin, TestCase):
         for solde, reste, total in ((0, 0, 10), (2, 0, 8), (3, 0, 7), (5, 2, 7)):
             with self.subTest(solde=solde):
                 Client.objects.filter(pk=self.personne.pk).update(
-                    nombre_cafes_prepayes=solde, nombre_cafes_achetes=7,
+                    nombre_cafes_prepayes=solde, nombre_cafes_fidelite=7, nombre_cafes_achetes=7,
                     nombre_cafes_gratuits=0,
                 )
                 transactions = ajouter_cafes(self.personne, 3, TransactionCafe.Type.UTILISE, employe=self.employe, succursale_id=1)
@@ -326,7 +326,7 @@ class ActualisationCafesGratuitsTests(EmployeConnecteMixin, TestCase):
     def test_achats_successifs_avec_solde_prepaye_actualisent_la_recompense(self):
         personne = Client.objects.create(
             nom_complet="Camille", telephone="418 555-1234",
-            nombre_cafes_achetes=8, nombre_cafes_prepayes=11,
+            nombre_cafes_fidelite=8, nombre_cafes_achetes=8, nombre_cafes_prepayes=11,
         )
         url = reverse("ajouter_cafes", args=[1, personne.pk])
         for achetes, gratuits in ((9, 0), (10, 1)):
@@ -367,7 +367,7 @@ class RechercheClientTests(EmployeConnecteMixin, TestCase):
     def setUpTestData(cls):
         cls.camille = Client.objects.create(
             nom_complet="Camille Tremblay", courriel="camille@example.com",
-            telephone="418 555-1234", nombre_cafes_achetes=7,
+            telephone="418 555-1234", nombre_cafes_fidelite=7, nombre_cafes_achetes=7,
         )
         Client.objects.create(nom_complet="Alex Roy", telephone="514 555-9876")
 
@@ -408,7 +408,7 @@ class ModificationClientTests(EmployeConnecteMixin, TestCase):
         self.employe.groups.set([Group.objects.get(name="Gérant")])
         self.personne = Client.objects.create(
             nom_complet="Camille Tremblay", courriel="camille@example.com",
-            telephone="418 555-1234", nombre_cafes_achetes=7,
+            telephone="418 555-1234", nombre_cafes_fidelite=7, nombre_cafes_achetes=7,
         )
         self.url = reverse("admin:CafeDolbeau_client_change", args=[self.personne.pk])
 

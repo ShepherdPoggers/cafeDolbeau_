@@ -1,0 +1,8 @@
+{% if promotion %}
+<section aria-label="Promotion en cours">
+    <h2>Promotion #{{ promotion.id }} — {{ promotion.nom }}</h2>
+    <p>{{ promotion.seuil }} cafés achetés pour un gratuit — jusqu’au {{ promotion.fin }} inclus.</p>
+    <p>Progression : {{ promotion.progression }} / {{ promotion.seuil }}</p>
+    <p>Cafés gratuits promotionnels disponibles : {{ promotion.gratuits }}</p>
+</section>
+{% endif %}

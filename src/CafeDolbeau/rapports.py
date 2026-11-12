@@ -75,6 +75,7 @@ class EvenementRapport:
     employe: str
     enregistrees: int
     annulees: int
+    promotion_id: int | None = None
 
     @property
     def net(self):
@@ -141,7 +142,7 @@ def generer_rapport(*, date_debut, date_fin, types, precision):
         | Q(annulation__date_annulation__gte=debut, annulation__date_annulation__lt=fin_exclusive)
     ).order_by().values(
         "pk", "quantite", "type_transaction", "date_creation", "client__nom_complet",
-        "employe__username", "annulation__date_annulation", "annulation__employe__username",
+        "promotion_id", "employe__username", "annulation__date_annulation", "annulation__employe__username",
     )
     libelles = dict(TYPES_RAPPORT)
     # Une seule lecture jointe : les événements et leurs traces partagent
@@ -165,7 +166,7 @@ def generer_rapport(*, date_debut, date_fin, types, precision):
                     date_locale, ligne["pk"], libelles[ligne["type_transaction"]],
                     "Annulation" if annulation else "Transaction", ligne["client__nom_complet"],
                     employe or "Inconnu", 0 if annulation else ligne["quantite"],
-                    ligne["quantite"] if annulation else 0,
+                    ligne["quantite"] if annulation else 0, ligne["promotion_id"],
                 ))
     evenements.sort(key=lambda evenement: (evenement.date.timestamp(), evenement.transaction_id, evenement.nature == "Annulation"))
     return Rapport(date_debut, date_fin, precision, tuple(types),
@@ -262,11 +263,11 @@ def exporter_excel(rapport):
     if rapport.precision == "transaction":
         transactions = classeur.create_sheet("Transactions")
         _ajouter_ligne(transactions, ["Date", "Transaction", "Type", "Événement", "Client", "Employé",
-                                      "Enregistrées", "Annulées", "Net"])
+                                      "Enregistrées", "Annulées", "Net", "Promotion"])
         for evenement in rapport.evenements:
             _ajouter_ligne(transactions, [evenement.date.replace(tzinfo=None), evenement.transaction_id,
                                          evenement.type_transaction, evenement.nature, evenement.client,
-                                         evenement.employe, evenement.enregistrees, evenement.annulees, evenement.net])
+                                         evenement.employe, evenement.enregistrees, evenement.annulees, evenement.net, evenement.promotion_id])
         _mettre_en_forme(transactions)
     fichier = BytesIO()
     classeur.save(fichier)

@@ -1,0 +1,5 @@
+{% extends "admin/change_form.html" %}
+{% block object-tools-items %}
+{{ block.super }}
+{% if annulation_promotion %}<li><a href="{{ annulation_promotion }}" class="deletelink">Annuler la promotion</a></li>{% endif %}
+{% endblock %}

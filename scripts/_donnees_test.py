@@ -39,10 +39,9 @@ def attribuer_roles(utilisateurs):
     from django.contrib.auth.models import Group
     from CafeDolbeau.models import AffectationEmployeSuccursale
     for nom, utilisateur in utilisateurs.items():
-        role = "Propriétaire" if nom == "proprietaire_test" else "Gérant" if nom == "gerant_test" else "Barista"
+        role = "Gérant" if nom == "gerant_test" else "Barista"
         utilisateur.groups.add(Group.objects.get(name=role))
-        if role != "Propriétaire":
-            AffectationEmployeSuccursale.objects.create(employe_id=utilisateur.pk, succursale_id=1)
+        AffectationEmployeSuccursale.objects.get_or_create(employe_id=utilisateur.pk, succursale_id=1)
 
 
 def terminer():

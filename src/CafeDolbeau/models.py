@@ -1,8 +1,8 @@
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
-from django.db.models.signals import pre_delete
+from django.db import models, transaction
+from django.db.models.signals import m2m_changed, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -90,6 +90,117 @@ class Succursale(models.Model):
         return self.nom
 
 
+class Promotion(models.Model):
+    nom = models.CharField(max_length=200)
+    cafes_pour_gratuite = models.PositiveIntegerField(
+        "cafés achetés pour un gratuit", validators=[MinValueValidator(1), MaxValueValidator(2147483647)],
+    )
+    date_debut = models.DateField("date de début")
+    date_fin = models.DateField("date de fin incluse")
+    succursales = models.ManyToManyField(Succursale, through="PromotionSuccursale", related_name="promotions")
+    annulee_le = models.DateTimeField("annulée le", null=True, blank=True, editable=False)
+    annulee_par = models.ForeignKey(
+        Employe, on_delete=models.PROTECT, null=True, blank=True, editable=False,
+        related_name="promotions_annulees", verbose_name="annulée par",
+    )
+    motif_annulation = models.CharField("motif de l’annulation", max_length=500, blank=True, editable=False)
+
+    class Meta:
+        ordering = ["-date_debut", "-pk"]
+        constraints = [
+            models.CheckConstraint(condition=(
+                models.Q(annulee_le__isnull=True, annulee_par__isnull=True)
+                | models.Q(annulee_le__isnull=False, annulee_par__isnull=False)
+            ), name="promotion_annulation_complete"),
+            models.CheckConstraint(condition=models.Q(date_fin__gte=models.F("date_debut")), name="promotion_dates_valides"),
+            models.CheckConstraint(condition=models.Q(cafes_pour_gratuite__gte=1, cafes_pour_gratuite__lte=2147483647), name="promotion_seuil_positif"),
+        ]
+
+    def __str__(self):
+        return f"Promotion #{self.pk} — {self.nom}"
+
+    def clean(self):
+        super().clean()
+        if self.date_debut and self.date_fin and self.date_fin < self.date_debut:
+            raise ValidationError("La fin doit être postérieure ou égale au début.")
+        ancien = Promotion.objects.filter(pk=self.pk).first() if self.pk else None
+        if ancien and (self.annulee_le, self.annulee_par_id, self.motif_annulation) != (
+            ancien.annulee_le, ancien.annulee_par_id, ancien.motif_annulation,
+        ):
+            raise ValidationError("L’annulation a changé. Rechargez la promotion ; utilisez l’action d’annulation dédiée.")
+        if ancien and ancien.annulee_le and (
+            self.date_debut != ancien.date_debut or self.date_fin != ancien.date_fin
+            or self.cafes_pour_gratuite != ancien.cafes_pour_gratuite
+        ):
+            raise ValidationError("Une promotion annulée ne peut pas être reprogrammée ou prolongée.")
+        if ancien and self.date_debut and self.date_fin:
+            if ancien.transactions.exists() and (
+                self.cafes_pour_gratuite != ancien.cafes_pour_gratuite
+                or self.date_debut != ancien.date_debut or self.date_fin < ancien.date_fin
+            ):
+                raise ValidationError("Une promotion utilisée conserve son seuil et son début ; seule une prolongation est permise.")
+            if self.date_fin > ancien.date_fin and ancien.date_fin < timezone.localdate():
+                raise ValidationError("Une promotion expirée ne peut plus être prolongée.")
+            if self.date_debut and self.date_fin:
+                verifier_periodes_promotion(self, self.succursales.values_list("pk", flat=True))
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            # Ordre commun aux affectations et à la caisse : succursales, puis promotion.
+            list(Succursale.objects.order_by("pk").select_for_update())
+            if self.pk:
+                list(Promotion.objects.filter(pk=self.pk).select_for_update())
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+
+def verifier_periodes_promotion(promotion, succursales):
+    if promotion.annulee_le:
+        return
+    if PromotionSuccursale.objects.filter(
+        promotion__annulee_le__isnull=True, succursale_id__in=succursales,
+        promotion__date_debut__lte=promotion.date_fin,
+        promotion__date_fin__gte=promotion.date_debut,
+    ).exclude(promotion_id=promotion.pk).exists():
+        raise ValidationError("Une autre promotion est déjà prévue à ces dates dans une succursale choisie.")
+
+
+class PromotionSuccursale(models.Model):
+    promotion = models.ForeignKey(Promotion, on_delete=models.CASCADE, related_name="affectations")
+    succursale = models.ForeignKey(Succursale, on_delete=models.PROTECT, related_name="promotions_planifiees")
+
+    class Meta:
+        verbose_name = "affectation de promotion"
+        verbose_name_plural = "affectations des promotions"
+        constraints = [models.UniqueConstraint(fields=["promotion", "succursale"], name="promotion_succursale_unique")]
+
+    def clean(self):
+        super().clean()
+        if self.promotion_id and self.succursale_id:
+            ancienne = type(self).objects.filter(pk=self.pk).first() if self.pk else None
+            if ancienne and (ancienne.promotion_id != self.promotion_id or ancienne.succursale_id != self.succursale_id):
+                raise ValidationError("Retirez l’affectation puis créez-en une nouvelle.")
+            if not ancienne and (self.promotion.annulee_le or self.promotion.transactions.exists()):
+                raise ValidationError("Les succursales d’une promotion utilisée sont figées.")
+            verifier_periodes_promotion(self.promotion, [self.succursale_id])
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            list(Succursale.objects.filter(pk=self.succursale_id).select_for_update())
+            self.promotion = Promotion.objects.select_for_update().get(pk=self.promotion_id)
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+
+@receiver(pre_delete, sender=PromotionSuccursale)
+def proteger_affectation_promotion(sender, instance, **kwargs):
+    with transaction.atomic():
+        list(Succursale.objects.filter(pk=instance.succursale_id).select_for_update())
+        promotion = Promotion.objects.select_for_update().get(pk=instance.promotion_id)
+        if promotion.annulee_le or promotion.transactions.exists():
+            raise ValidationError("Les succursales d’une promotion utilisée sont figées.")
+
+
 class AffectationEmployeSuccursale(models.Model):
     employe = models.ForeignKey(
         Employe, on_delete=models.CASCADE, related_name="affectations_succursales",
@@ -123,6 +234,9 @@ class Client(models.Model):
     nombre_cafes_achetes = models.PositiveIntegerField(
         "nombre de cafés achetés", default=0
     )
+    nombre_cafes_fidelite = models.PositiveIntegerField(
+        "achats admissibles à la fidélité habituelle", default=0, editable=False,
+    )
     nombre_cafes_gratuits = models.PositiveIntegerField(
         "nombre de cafés gratuits", default=0
     )
@@ -152,8 +266,25 @@ class Client(models.Model):
         if self.pk != self.ID_SUPPRIME and not self.courriel.strip() and not self.telephone.strip():
             raise ValidationError("Veuillez renseigner un courriel ou un téléphone.")
 
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.nombre_cafes_fidelite:
+            self.nombre_cafes_fidelite = self.nombre_cafes_achetes
+        return super().save(*args, **kwargs)
+
     def __str__(self):
         return self.nom_complet
+
+
+class CompteurPromotion(models.Model):
+    promotion = models.ForeignKey(Promotion, on_delete=models.PROTECT, related_name="compteurs")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="compteurs_promotion")
+    progression = models.PositiveIntegerField(default=0)
+    cafes_gratuits = models.PositiveIntegerField("cafés promotionnels disponibles", default=0)
+
+    class Meta:
+        verbose_name = "compteur promotionnel"
+        verbose_name_plural = "compteurs promotionnels"
+        constraints = [models.UniqueConstraint(fields=["promotion", "client"], name="compteur_promotion_client_unique")]
 
 
 @receiver(pre_delete, sender=Client)
@@ -195,6 +326,12 @@ class TransactionCafe(models.Model):
         related_name="transactions_effectuees", verbose_name="employé",
     )
     operation_id = models.UUIDField("opération", null=True, blank=True, db_index=True)
+    promotion = models.ForeignKey(
+        Promotion, on_delete=models.PROTECT, null=True, blank=True, related_name="transactions",
+    )
+    variation_fidelite = models.IntegerField(null=True, blank=True)
+    variation_progression_promotion = models.IntegerField(default=0)
+    variation_gratuits_promotion = models.IntegerField(default=0)
     variation_achetes = models.IntegerField(null=True, blank=True)
     variation_prepayes = models.IntegerField(null=True, blank=True)
     variation_gratuits = models.IntegerField(null=True, blank=True)
@@ -255,6 +392,9 @@ class FusionClient(models.Model):
     )
     soldes_source = models.JSONField(default=dict, editable=False)
     soldes_destination = models.JSONField(default=dict, editable=False)
+    promotions_source = models.JSONField(default=dict, editable=False)
+    promotions_destination = models.JSONField(default=dict, editable=False)
+    promotions_fusionnees = models.JSONField(default=dict, editable=False)
     transactions_deplacees = models.JSONField(default=list, editable=False)
     statut = models.CharField("statut", max_length=10, choices=Statut.choices, default=Statut.EN_ATTENTE, editable=False)
     cree_le = models.DateTimeField("créée le", default=timezone.now, editable=False)
@@ -297,3 +437,32 @@ class FusionClient(models.Model):
 @receiver(pre_delete, sender=FusionClient)
 def proteger_historique_fusion(sender, instance, **kwargs):
     raise ValidationError("L'historique des fusions ne peut pas être supprimé.")
+
+
+@receiver(pre_delete, sender=Promotion)
+def proteger_promotion_utilisee(sender, instance, **kwargs):
+    with transaction.atomic():
+        list(Succursale.objects.order_by("pk").select_for_update())
+        list(Promotion.objects.filter(pk=instance.pk).select_for_update())
+        if instance.annulee_le or instance.transactions.exists():
+            raise ValidationError("Une promotion utilisée ou annulée ne peut pas être supprimée.")
+
+
+@receiver(m2m_changed, sender=Promotion.succursales.through)
+def valider_liens_promotions(sender, instance, action, reverse, pk_set, **kwargs):
+    if action not in ("pre_add", "pre_remove", "pre_clear"):
+        return
+    # Les opérations M2M Django utilisent bulk_create et ne passent pas par save().
+    list(Succursale.objects.order_by("pk").select_for_update())
+    if reverse:
+        promotions = Promotion.objects.filter(pk__in=pk_set) if pk_set is not None else instance.promotions.all()
+    else:
+        promotions = Promotion.objects.filter(pk=instance.pk)
+    for promotion in promotions.order_by("pk").select_for_update():
+        actuelles = set(promotion.succursales.values_list("pk", flat=True))
+        concernees = {instance.pk} if reverse else set(pk_set or actuelles)
+        modifiees = (concernees - actuelles) if action == "pre_add" else (concernees & actuelles)
+        if modifiees and (promotion.annulee_le or promotion.transactions.exists()):
+            raise ValidationError("Les succursales d’une promotion utilisée sont figées.")
+        if action == "pre_add":
+            verifier_periodes_promotion(promotion, concernees)

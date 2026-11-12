@@ -1,5 +1,19 @@
 # Migrer les données de la V1 vers la V2
 
+## Transférer SQLite vers PostgreSQL
+
+Depuis la racine du dépôt, avec l’environnement virtuel activé et PostgreSQL configuré dans `.env`, arrêter l’application puis exécuter :
+
+```bash
+python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
+```
+
+Le script prend un instantané SQLite, journal WAL compris, et applique automatiquement les migrations manquantes **sur cette copie temporaire**. Le fichier `src/db.sqlite3` reste inchangé, même s’il ne contient pas encore les tables de succursales et d’affectations. Les rôles existants sont conservés.
+
+La destination PostgreSQL peut être sans tables ou avoir déjà été initialisée par `python src/manage.py migrate`. Le script vérifie dans ce dernier cas qu’elle ne contient que les valeurs initiales des migrations. Il refuse une destination contenant des comptes, clients, transactions, paramètres personnalisés ou tables étrangères; il ne les supprime pas automatiquement.
+
+La création du schéma et l’importation sont effectuées dans une transaction PostgreSQL. Les données importées sont comparées à la copie SQLite migrée et les séquences d’identifiants sont ajustées. En cas d’erreur, la destination retrouve son état précédent. Une seconde exécution après un transfert réussi est refusée pour éviter d’écraser les données.
+
 ## Ajouter les succursales à une installation existante
 
 Après avoir arrêté le serveur et sauvegardé la base utilisée par l’application, appliquer la mise à jour depuis la racine du dépôt, avec l’environnement virtuel activé :
@@ -15,7 +29,7 @@ La fidélité reste commune à toutes les succursales. Les opérations saisies d
 
 Les Propriétaires et superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants consultent et annulent les transactions des succursales auxquelles ils sont affectés, sans accès à la gestion des succursales.
 
-Avant un transfert de SQLite vers PostgreSQL, appliquer également cette migration à la source SQLite. Le transfert conserve les succursales et leurs liens avec les transactions.
+Pour un transfert de SQLite vers PostgreSQL, le script applique cette migration sur sa copie temporaire et conserve les succursales et leurs liens avec les transactions.
 
 ## Ajouter le Propriétaire et les affectations
 
@@ -32,7 +46,7 @@ Les dix dernières transactions de chaque client restent visibles pour tous les 
 
 Les Gérants conservent les fonctions globales de gestion des clients, de fusion, de correction des soldes et de paramétrage de la fidélité. Les rapports et exports Excel sont provisoirement réservés aux Propriétaires et superutilisateurs; leur filtrage par succursale sera traité ultérieurement. Un retrait d’affectation interdit les nouvelles opérations de caisse et annulations concernées, sans modifier l’historique.
 
-Avant un transfert SQLite vers PostgreSQL, appliquer également `0018` sur la source SQLite avec `CAFE_DB_ENGINE=sqlite` et `CAFE_DB_PATH` désignant le fichier source. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
+Lors d’un transfert SQLite vers PostgreSQL, le script applique également `0018` sur sa copie temporaire; aucune mise à jour manuelle du fichier SQLite source n’est nécessaire. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
 
 ## Conservation des données
 
@@ -161,3 +175,63 @@ id,client,cafes_achetes,etampes,recompenses_en_reserve,cafes_prepayes
 Les 12 transactions existantes conservent leurs identifiants, clients, types, quantités et dates. Les 5 comptes de démonstration conservent aussi leurs identifiants, mots de passe et états. Le script refuse une seconde exécution sur la même base sans la modifier.
 
 La conservation des soldes et de l’historique a également été vérifiée avec une base créée par le code du tag `v1.0.0.4`. Les fichiers des migrations V1 ont été comparés à ceux des cinq tags V1 : aucune différence.
+
+## Promotions temporaires (migration 0019)
+
+L’application fonctionne sur PostgreSQL. Pour une installation déjà transférée :
+
+```bash
+python src/manage.py migrate
+```
+
+La migration initialise la progression habituelle avec le total existant des achats,
+préserve les soldes, les transactions, les annulations et les rôles, et adapte les
+instantanés des fusions réversibles. Aucune promotion n’est créée automatiquement.
+
+Pour l’import initial d’un fichier SQLite V2, utiliser uniquement :
+
+```bash
+python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
+```
+
+Le script met à jour une copie temporaire de la source puis importe les données
+vérifiées dans PostgreSQL. Le fichier SQLite original est conservé ; il n’est pas
+utilisé pour l’exploitation des promotions.
+
+Le Propriétaire ou un superutilisateur crée les promotions dans l’administration,
+choisit les succursales participantes et peut programmer les périodes suivantes.
+Les dates sont inclusives, de minuit à minuit le lendemain de la fin, heure du Québec.
+Une même succursale ne peut pas participer à deux promotions aux dates communes.
+Après la première transaction associée, le seuil, le début et les succursales sont
+figés. Le nom peut changer ; la fin peut être prolongée avant expiration, sans
+chevauchement. Une promotion utilisée ne peut pas être supprimée.
+
+La promotion remplace la fidélité habituelle pour les achats directs participants.
+Sa progression et ses gratuits sont partagés entre les succursales participantes,
+mais restent distincts des soldes habituels. Les cafés promotionnels sont utilisés
+en premier, puis les gratuits habituels, puis les prépayés. Les cartes conservent
+leur bonus habituel et ne font pas progresser les promotions.
+
+Après expiration, le compteur disparaît de la caisse et ses gratuits sont
+inutilisables. Les compteurs et les références aux promotions restent conservés
+pour les rapports et les annulations. Une annulation après expiration ne réactive
+pas les gratuits. Les fusions additionnent les gratuits et conservent le reste de
+progression combiné, sans accorder de nouveau cadeau.
+
+Les rapports détaillés et leur export Excel affichent le numéro de promotion,
+y compris pour les annulations. Les transactions historiques sans promotion
+conservent une référence vide.
+
+### Annuler une promotion en cours (migration 0020)
+
+Appliquer `python src/manage.py migrate`, puis ouvrir **Administration → Promotions**.
+Le Propriétaire et le superutilisateur disposent du lien **Annuler la promotion**,
+également disponible sur la fiche. La confirmation propose un motif facultatif.
+
+L’annulation est immédiate, définitive et commune à toutes les succursales de la
+promotion. La fidélité habituelle reprend ; les progressions et gratuits
+promotionnels deviennent inutilisables. Les compteurs, achats et transactions
+restent conservés, ainsi que la date, l’auteur et le motif de l’annulation.
+Les annulations de transactions restent possibles sans réactiver la promotion.
+Les succursales peuvent recevoir une promotion de remplacement aux mêmes dates.
+La caisse ouverte reflète l’arrêt lors de son actualisation automatique.

@@ -4,6 +4,7 @@
                 <div>
                     {{ transaction.date_creation|date:"d/m/Y H:i" }} : {{ transaction.quantite }} — {{ transaction.get_type_transaction_display }}
                     <small>Employé : {{ transaction.employe.username|default:"Inconnu" }}</small>
+                    {% if transaction.promotion_id %}<small>Promotion #{{ transaction.promotion_id }}</small>{% endif %}
                     {% if transaction.annulee %}
                     <small class="statut-annulation">Annulée le {{ transaction.annulation.date_annulation|date:"d/m/Y H:i" }} par {{ transaction.annulation.employe.username }}</small>
                     {% else %}

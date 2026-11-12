@@ -47,7 +47,7 @@ class AnnulationTests(TestCase):
 
     def initialiser(self, achetes=0, prepayes=0, gratuits=0):
         Client.objects.filter(pk=self.personne.pk).update(
-            nombre_cafes_achetes=achetes, nombre_cafes_prepayes=prepayes,
+            nombre_cafes_achetes=achetes, nombre_cafes_fidelite=achetes, nombre_cafes_prepayes=prepayes,
             nombre_cafes_gratuits=gratuits,
         )
 

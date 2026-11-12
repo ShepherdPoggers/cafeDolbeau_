@@ -158,7 +158,7 @@ class ClientAdmin(admin.ModelAdmin):
     list_display = ("nom_complet", "telephone", "courriel", "nombre_cafes_achetes", "nombre_cafes_prepayes", "nombre_cafes_gratuits", "est_actif")
     search_fields = ("nom_complet", "telephone", "courriel")
     list_filter = ("est_actif",)
-    readonly_fields = ("est_actif",)
+    readonly_fields = ("est_actif", "nombre_cafes_fidelite")
     actions = ("delete_selected", "fusionner_selection")
 
     def get_queryset(self, request):
@@ -187,6 +187,9 @@ class ClientAdmin(admin.ModelAdmin):
             for champ, _, _ in COMPTEURS:
                 if champ not in compteurs_modifies:
                     setattr(obj, champ, getattr(actuel, champ))
+            obj.nombre_cafes_fidelite = max(0, actuel.nombre_cafes_fidelite + obj.nombre_cafes_achetes - actuel.nombre_cafes_achetes)
+            if obj.nombre_cafes_fidelite > 2147483647:
+                raise ValidationError("La correction dépasse la limite de fidélité.")
             obj.est_actif = actuel.est_actif
             obj.save(force_update=True)
 
@@ -355,16 +358,16 @@ class AnnulationInline(admin.StackedInline):
 @admin.register(TransactionCafe)
 class TransactionCafeAdmin(admin.ModelAdmin):
     change_form_template = "admin/CafeDolbeau/transactioncafe/change_form.html"
-    list_display = ("id", "client", "succursale", "type_transaction", "quantite", "employe", "date_creation", "est_annulee", "lien_annuler")
-    list_filter = (StatutAnnulationFilter, ("succursale", admin.RelatedOnlyFieldListFilter), "client", "employe", "type_transaction", "date_creation")
+    list_display = ("id", "client", "succursale", "promotion", "type_transaction", "quantite", "employe", "date_creation", "est_annulee", "lien_annuler")
+    list_filter = ("promotion", StatutAnnulationFilter, ("succursale", admin.RelatedOnlyFieldListFilter), "client", "employe", "type_transaction", "date_creation")
     search_fields = ("client__nom_complet", "client__telephone", "client__courriel", "employe__username")
-    readonly_fields = ("client", "client_origine_id", "succursale", "type_transaction", "quantite", "employe", "date_creation", "operation_id", "variation_achetes", "variation_prepayes", "variation_gratuits", "est_annulee", "lien_annuler")
+    readonly_fields = ("client", "client_origine_id", "succursale", "type_transaction", "quantite", "employe", "date_creation", "operation_id", "promotion", "variation_fidelite", "variation_progression_promotion", "variation_gratuits_promotion", "variation_achetes", "variation_prepayes", "variation_gratuits", "est_annulee", "lien_annuler")
     fields = readonly_fields
     actions = None
     inlines = (AnnulationInline,)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).filter(pk__in=transactions_administrables(request.user)).select_related("client", "succursale", "employe", "annulation__employe")
+        return super().get_queryset(request).filter(pk__in=transactions_administrables(request.user)).select_related("client", "succursale", "promotion", "employe", "annulation__employe")
 
     def has_view_permission(self, request, obj=None):
         return request.user.has_perm(PERMISSION_GERANT)
@@ -390,3 +393,6 @@ class TransactionCafeAdmin(admin.ModelAdmin):
             return "Annulation indisponible pendant la fusion réversible"
         url = reverse("annuler_transaction_admin", args=[obj.pk])
         return format_html('<a href="{}">Annuler l’opération</a>', url)
+
+# Enregistrement des écrans de planification réservés au propriétaire.
+from . import admin_promotions  # noqa: E402, F401

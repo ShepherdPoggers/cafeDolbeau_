@@ -8,8 +8,13 @@ from django.db.models import F, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import AnnulationTransaction, Client, Employe, FusionClient, ParametresCafe, TransactionCafe
+from .models import AnnulationTransaction, Client, CompteurPromotion, Employe, FusionClient, ParametresCafe, TransactionCafe
 from .permissions import PERMISSION_BASE, PERMISSION_GERANT, peut_intervenir_transaction, verifier_acces_succursale
+
+from .promotions import (
+    effets_annulation_promotion, fusionner_compteurs, instantane_promotions,
+    promotion_courante, restaurer_compteurs,
+)
 
 
 COMPTEURS = (
@@ -64,7 +69,7 @@ def _employe_actuel(employe):
 def soldes_clients(clients):
     """Instantané signé par l'administration, revérifié sous verrou au POST."""
     return {
-        str(client.pk): [getattr(client, compteur) for compteur, _, _ in COMPTEURS]
+        str(client.pk): [*[getattr(client, compteur) for compteur, _, _ in COMPTEURS], client.nombre_cafes_fidelite, instantane_promotions(client)]
         for client in clients
     }
 
@@ -77,7 +82,7 @@ def _gerant_actuel(employe):
 
 
 def _compteurs_client(client):
-    return {compteur: getattr(client, compteur) for compteur, _, _ in COMPTEURS}
+    return {**{compteur: getattr(client, compteur) for compteur, _, _ in COMPTEURS}, "nombre_cafes_fidelite": client.nombre_cafes_fidelite}
 
 
 def verifier_fusion_possible(source, destination):
@@ -91,6 +96,7 @@ def verifier_fusion_possible(source, destination):
         compteur: getattr(source, compteur) + getattr(destination, compteur)
         for compteur, _, _ in COMPTEURS
     }
+    totaux["nombre_cafes_fidelite"] = source.nombre_cafes_fidelite + destination.nombre_cafes_fidelite
     if any(total > 2147483647 for total in totaux.values()):
         raise ValidationError("La fusion dépasse la limite des compteurs de cafés.")
     return totaux
@@ -109,11 +115,13 @@ def fusionner_clients(source_id, destination_id, *, employe, soldes_attendus=Non
         totaux = verifier_fusion_possible(source, destination)
         if soldes_attendus is not None and soldes_clients(clients.values()) != soldes_attendus:
             raise ValidationError("Les soldes ont changé. Vérifiez la nouvelle confirmation.", code="soldes_modifies")
+        promotions_source, promotions_destination, promotions_fusionnees = fusionner_compteurs(source, destination)
         fusion = FusionClient.objects.create(
             client_source=source, client_destination=destination,
             soldes_source=_compteurs_client(source), soldes_destination=_compteurs_client(destination),
             transactions_deplacees=list(source.transactions_cafe.order_by("pk").values("id", "client_origine_id")),
-            cree_par=acteur,
+            cree_par=acteur, promotions_source=promotions_source,
+            promotions_destination=promotions_destination, promotions_fusionnees=promotions_fusionnees,
         )
         source.transactions_cafe.update(
             client_origine_id=Coalesce("client_origine_id", F("client_id")), client_id=destination.pk,
@@ -140,10 +148,14 @@ def annuler_fusion(fusion_id, *, employe):
         clients = verrouilles.in_bulk()
         source = clients.get(fusion.client_source_id)
         destination = clients.get(fusion.client_destination_id)
-        totaux = {compteur: fusion.soldes_source[compteur] + fusion.soldes_destination[compteur] for compteur, _, _ in COMPTEURS}
+        totaux = {compteur: fusion.soldes_source[compteur] + fusion.soldes_destination[compteur] for compteur in fusion.soldes_source}
         if (source is None or destination is None or source.est_actif or not destination.est_actif
-                or _compteurs_client(source) != fusion.soldes_source or _compteurs_client(destination) != totaux):
+                or _compteurs_client(source) != fusion.soldes_source or _compteurs_client(destination) != totaux
+                or instantane_promotions(source) != fusion.promotions_source
+                or instantane_promotions(destination) != fusion.promotions_fusionnees):
             raise ValidationError("Les comptes de la fusion ont changé. Le retour arrière est indisponible.")
+        restaurer_compteurs(source, fusion.promotions_source)
+        restaurer_compteurs(destination, fusion.promotions_destination)
         origines = {ligne["id"]: ligne["client_origine_id"] for ligne in fusion.transactions_deplacees}
         lignes = list(TransactionCafe.objects.filter(pk__in=origines, client=destination))
         if len(lignes) != len(origines):
@@ -235,30 +247,43 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
         verifier_acces_succursale(auteur, succursale_id)
         if not client_actuel.est_actif:
             raise ValidationError("Ce client a été fusionné. Ouvrez la fiche du client conservé.")
+        promotion = promotion_courante(succursale_id, verrouiller=True)
+        compteur_promo = None
+        if promotion and type_transaction != TransactionCafe.Type.PREPAYE:
+            compteur_promo, _ = CompteurPromotion.objects.get_or_create(client=client_actuel, promotion=promotion)
         operation = uuid4()
+        # Type, quantité, effets habituels, progression fidélité, progression promo, gratuits promo.
         if type_transaction == TransactionCafe.Type.PREPAYE:
             if quantite > 2147483647 // 11:
                 raise ValidationError("Nombre de cartes invalide.")
-            cafes = quantite * 10
-            lignes = [(TransactionCafe.Type.PREPAYE, cafes, (0, cafes, quantite))]
+            lignes = [(TransactionCafe.Type.PREPAYE, quantite * 10, (0, quantite * 10, quantite), 0, 0, 0)]
         else:
-            gratuits_utilises = min(client_actuel.nombre_cafes_gratuits, quantite) if type_transaction == TransactionCafe.Type.UTILISE else 0
-            prepayes_utilises = min(client_actuel.nombre_cafes_prepayes, quantite - gratuits_utilises) if type_transaction == TransactionCafe.Type.UTILISE else 0
-            achetes = quantite - gratuits_utilises - prepayes_utilises
-            total = client_actuel.nombre_cafes_achetes
-            parametres = ParametresCafe.charger()
-            gratuits = parametres.calculer_cafes_gratuits(total, achetes)
+            utilise = type_transaction == TransactionCafe.Type.UTILISE
+            promo_utilises = min(compteur_promo.cafes_gratuits, quantite) if utilise and compteur_promo else 0
+            gratuits_utilises = min(client_actuel.nombre_cafes_gratuits, quantite - promo_utilises) if utilise else 0
+            prepayes_utilises = min(client_actuel.nombre_cafes_prepayes, quantite - promo_utilises - gratuits_utilises) if utilise else 0
+            achetes = quantite - promo_utilises - gratuits_utilises - prepayes_utilises
+            if promotion:
+                gratuits = (compteur_promo.progression + achetes) // promotion.cafes_pour_gratuite
+                progression = achetes - gratuits * promotion.cafes_pour_gratuite
+            else:
+                gratuits = ParametresCafe.charger().calculer_cafes_gratuits(client_actuel.nombre_cafes_fidelite, achetes)
+                progression = 0
             lignes = [
-                (TransactionCafe.Type.UTILISE, prepayes_utilises + gratuits_utilises, (0, -prepayes_utilises, -gratuits_utilises)),
-                (TransactionCafe.Type.ACHAT, achetes, (achetes, 0, 0)),
-                (TransactionCafe.Type.GRATUIT, gratuits, (0, 0, gratuits)),
+                (TransactionCafe.Type.UTILISE, prepayes_utilises + gratuits_utilises, (0, -prepayes_utilises, -gratuits_utilises), 0, 0, 0),
+                (TransactionCafe.Type.UTILISE, promo_utilises, (0, 0, 0), 0, 0, -promo_utilises),
+                (TransactionCafe.Type.ACHAT, achetes, (achetes, 0, 0), 0 if promotion else achetes, progression, 0),
+                (TransactionCafe.Type.GRATUIT, gratuits, (0, 0, 0 if promotion else gratuits), 0, 0, gratuits if promotion else 0),
             ]
         resultats = []
-        for type_cafe, nombre, effets in lignes:
+        for type_cafe, nombre, effets, fidelite, progression, gratuits_promo in lignes:
             if nombre:
                 ligne = TransactionCafe(
                     client=client_actuel, employe=auteur, operation_id=operation,
                     succursale_id=succursale_id,
+                    promotion=promotion if type_transaction != TransactionCafe.Type.PREPAYE else None,
+                    variation_fidelite=fidelite, variation_progression_promotion=progression,
+                    variation_gratuits_promotion=gratuits_promo,
                     type_transaction=type_cafe, quantite=nombre,
                     **dict(zip((champ for _, champ, _ in COMPTEURS), effets)),
                 )
@@ -269,9 +294,17 @@ def ajouter_cafes(client, quantite, type_transaction=TransactionCafe.Type.ACHAT,
             compteur: getattr(client_actuel, compteur) + sum(getattr(ligne, variation) for ligne in resultats)
             for compteur, variation, _ in COMPTEURS
         }
+        nouveaux_soldes["nombre_cafes_fidelite"] = client_actuel.nombre_cafes_fidelite + sum(ligne.variation_fidelite for ligne in resultats)
         if any(not 0 <= valeur <= 2147483647 for valeur in nouveaux_soldes.values()):
             raise ValidationError("L'opération dépasse la limite des compteurs de cafés.")
         Client.objects.filter(pk=client_actuel.pk).update(**nouveaux_soldes)
+        if compteur_promo:
+            compteur_promo.progression += sum(ligne.variation_progression_promotion for ligne in resultats)
+            compteur_promo.cafes_gratuits += sum(ligne.variation_gratuits_promotion for ligne in resultats)
+            if not 0 <= compteur_promo.cafes_gratuits <= 2147483647:
+                raise ValidationError("L’opération dépasse la limite des cafés promotionnels.")
+            compteur_promo.full_clean()
+            compteur_promo.save()
         _finaliser_fusion(client_actuel, auteur, operation)
         return resultats
 
@@ -339,13 +372,14 @@ def preparer_annulation(source, employe, details_anciennes=None, *, succursale_i
         valider_effets(ligne, effets)
         for (_, variation, _), valeur in zip(COMPTEURS, effets):
             setattr(ligne, variation, valeur)
+        ligne.variation_fidelite = effets[0]
     return lignes
 
 
 def recapitulatif_annulation(client, lignes):
     if client.pk == Client.ID_SUPPRIME:
         return []
-    return [
+    soldes = [
         {
             "libelle": libelle,
             "avant": getattr(client, compteur),
@@ -353,6 +387,19 @@ def recapitulatif_annulation(client, lignes):
         }
         for compteur, variation, libelle in COMPTEURS
     ]
+    soldes.append({
+        "libelle": "Achats admissibles à la fidélité habituelle", "avant": client.nombre_cafes_fidelite,
+        "apres": max(0, client.nombre_cafes_fidelite - sum(
+            ligne.variation_fidelite if ligne.variation_fidelite is not None else ligne.variation_achetes for ligne in lignes)),
+    })
+    for compteur, progression, gratuits in effets_annulation_promotion(client, lignes):
+        expiree = compteur.promotion.annulee_le is not None or compteur.promotion.date_fin < timezone.localdate()
+        soldes.extend([
+            {"libelle": f"Promotion #{compteur.promotion_id} — progression", "avant": compteur.progression, "apres": progression},
+            {"libelle": f"Promotion #{compteur.promotion_id} — gratuits" + (" (indisponibles)" if expiree else ""),
+             "avant": compteur.cafes_gratuits, "apres": gratuits},
+        ])
+    return soldes
 
 
 def annuler_operation(transaction_id, employe, details_anciennes=None, *, succursale_id=None):
@@ -363,15 +410,21 @@ def annuler_operation(transaction_id, employe, details_anciennes=None, *, succur
         if all(ligne.annulee for ligne in lignes):
             return 0
         nouveaux_soldes = recapitulatif_annulation(client, lignes)
+        if any(solde["apres"] > 2147483647 for solde in nouveaux_soldes):
+            raise ValidationError("L’annulation dépasse la limite des compteurs.")
         if source.operation_id is None:
             operation = uuid4()
             for ligne in lignes:
                 ligne.operation_id = operation
-                ligne.save(update_fields=["operation_id", *(variation for _, variation, _ in COMPTEURS)])
+                ligne.save(update_fields=["operation_id", "variation_fidelite", *(variation for _, variation, _ in COMPTEURS)])
         date = timezone.now()
         for ligne in lignes:
             AnnulationTransaction.objects.create(transaction=ligne, employe=acteur, date_annulation=date)
         if client.pk != Client.ID_SUPPRIME:
+            for compteur, progression, gratuits in effets_annulation_promotion(client, lignes):
+                compteur.progression, compteur.cafes_gratuits = progression, gratuits
+                compteur.save(update_fields=["progression", "cafes_gratuits"])
+            Client.objects.filter(pk=client.pk).update(nombre_cafes_fidelite=nouveaux_soldes[3]["apres"])
             Client.objects.filter(pk=client.pk).update(**{
                 compteur: solde["apres"] for (compteur, _, _), solde in zip(COMPTEURS, nouveaux_soldes)
             })

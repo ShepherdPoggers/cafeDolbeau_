@@ -51,13 +51,13 @@
         <div class="table-scroll">
             <table>
                 <caption>{{ page_evenements.paginator.count }} événement{{ page_evenements.paginator.count|pluralize }} — dates et heures de Toronto</caption>
-                <thead><tr><th scope="col">Date</th><th scope="col">Transaction</th><th scope="col">Type</th><th scope="col">Événement</th><th scope="col">Client</th><th scope="col">Employé</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th></tr></thead>
+                <thead><tr><th scope="col">Date</th><th scope="col">Transaction</th><th scope="col">Type</th><th scope="col">Événement</th><th scope="col">Client</th><th scope="col">Employé</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th><th scope="col">Promotion</th></tr></thead>
                 <tbody>{% for evenement in page_evenements %}<tr>
                     <td>{{ evenement.date|date:"d/m/Y H:i:s" }}</td><td>#{{ evenement.transaction_id }}</td>
                     <td>{{ evenement.type_transaction }}</td><td>{{ evenement.nature }}</td>
                     <td>{{ evenement.client }}</td><td>{{ evenement.employe }}</td>
-                    <td>{{ evenement.enregistrees }}</td><td>{{ evenement.annulees }}</td><td>{{ evenement.net }}</td>
-                </tr>{% empty %}<tr><td colspan="9">Aucune transaction ni annulation pour cette sélection.</td></tr>{% endfor %}</tbody>
+                    <td>{{ evenement.enregistrees }}</td><td>{{ evenement.annulees }}</td><td>{{ evenement.net }}</td><td>{% if evenement.promotion_id %}#{{ evenement.promotion_id }}{% else %}—{% endif %}</td>
+                </tr>{% empty %}<tr><td colspan="10">Aucune transaction ni annulation pour cette sélection.</td></tr>{% endfor %}</tbody>
             </table>
         </div>
         {% if page_evenements.has_other_pages %}

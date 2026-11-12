@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{% static 'CafeDolbeau/style.css' %}">
     <title>Café Dolbeau — Ajouter des cafés</title>
-    <script src="{% static 'CafeDolbeau/cafes.js' %}" defer></script>
+    <script src="{% static 'CafeDolbeau/cafes.js' %}?v=promotions-auto-1" defer></script>
 </head>
 <body class="cafe-page">
 {% include "en_tete.html" %}
@@ -25,6 +25,7 @@
     <p>Total de cafés prépayés : {{ client.nombre_cafes_prepayes }}</p>
     <p>Total de cafés gratuits : {{ client.nombre_cafes_gratuits }}</p>
     </div>
+    <div id="compteur-promotion" data-url="{% url 'ajouter_cafes' request.succursale.pk client.pk %}?partiel=promotion" aria-live="polite">{% include "compteur_promotion.html" %}</div>
     <div id="messages-cafes" role="region" aria-label="Messages de transaction" aria-live="polite">
     {% for message in messages %}
         <p role="status" class="{{ message.tags }}">{{ message }}</p>
@@ -36,7 +37,7 @@
         {{ form.as_p }}
         <div class="erreurs-cafes" role="alert"></div>
         <button name="type_transaction" type="submit" value="achat">Acheter café</button>
-        <button name="type_transaction" type="submit" value="utilise">Utiliser les cafés prépayés</button>
+        <button name="type_transaction" type="submit" value="utilise">Utiliser les cafés disponibles</button>
 
     </form>
     <h2>Acheter des cartes de cafés</h2>

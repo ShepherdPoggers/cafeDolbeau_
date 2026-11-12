@@ -177,7 +177,7 @@ class ParametresCafeTests(TestCase):
 
     def test_franchissement_de_plusieurs_seuils_et_effets_enregistres(self):
         self.regler(5)
-        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=4)
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_fidelite=4, nombre_cafes_achetes=4)
         lignes = self.achat(12)
         gratuite = next(ligne for ligne in lignes if ligne.type_transaction == "gratuit")
         self.assertEqual(gratuite.quantite, 3)
@@ -196,7 +196,7 @@ class ParametresCafeTests(TestCase):
 
     def test_consommation_ne_recompense_que_les_cafes_payes(self):
         self.regler(5)
-        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_achetes=4, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1)
+        Client.objects.filter(pk=self.personne.pk).update(nombre_cafes_fidelite=4, nombre_cafes_achetes=4, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1)
         lignes = self.achat(6, "utilise")
         self.personne.refresh_from_db()
         self.assertEqual((self.personne.nombre_cafes_achetes, self.personne.nombre_cafes_prepayes, self.personne.nombre_cafes_gratuits), (7, 0, 1))
@@ -243,7 +243,7 @@ class ParametresCafeTests(TestCase):
         demain = timezone.localdate() + timedelta(days=1)
         self.assertEqual(self.modifier_regle(3, demain.isoformat()).status_code, 302)
         Client.objects.filter(pk=self.personne.pk).update(
-            nombre_cafes_achetes=2, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1,
+            nombre_cafes_fidelite=2, nombre_cafes_achetes=2, nombre_cafes_prepayes=2, nombre_cafes_gratuits=1,
         )
         self.achat(4, "utilise")
         self.personne.refresh_from_db()

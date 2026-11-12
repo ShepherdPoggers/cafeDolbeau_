@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ promotion }}</h1>
+{% if annulation_possible %}
+<p>L’annulation est définitive et prend effet immédiatement dans toutes les succursales participantes.</p>
+<p>La fidélité habituelle reprend. La progression et les cafés gratuits de cette promotion deviennent inutilisables. Les achats, les transactions et les compteurs restent conservés dans l’historique.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<input type="submit" value="Confirmer l’annulation"></form>
+{% elif promotion.annulee_le %}
+<p>Cette promotion est déjà annulée.</p>
+{% else %}
+<p>Cette promotion n’est pas en cours et ne peut pas être annulée.</p>
+{% endif %}
+<p><a href="{% url 'admin:CafeDolbeau_promotion_change' promotion.pk %}">Retour à la promotion</a></p>
+{% endblock %}

@@ -130,6 +130,14 @@ Sous Windows, remplacer `python` par `.\.venv\Scripts\python.exe` dans ce bloc.
 
 ## Base de données et administration
 
+Pour transférer une ancienne base SQLite vers PostgreSQL, le script s’occupe des migrations et de l’importation :
+
+```bash
+python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
+```
+
+Il met à jour une copie temporaire de SQLite et conserve le fichier original. PostgreSQL peut être vide ou déjà initialisé par `manage.py migrate`, avec uniquement ses valeurs initiales. Tout écrasement de données existantes est refusé. Voir la [procédure de transfert](docs/migration.md#transférer-sqlite-vers-postgresql).
+
 La base SQLite de démonstration se trouve dans **`src/db.sqlite3`**. La base PostgreSQL est configurée par les variables `POSTGRES_*` du fichier `.env`. La commande `migrate` crée la base et ses tables si elles n’existent pas, ou applique les migrations manquantes. Elle doit être exécutée avant la première utilisation.
 
 La procédure V2 ci-dessus exécute déjà les migrations. Pour démarrer plutôt avec une base vide, remplacer la commande de chargement des données de test par `python src/manage.py migrate`, puis créer un premier compte avec `python src/manage.py createsuperuser` avant de lancer le serveur. Sous Windows, utiliser `.\.venv\Scripts\python.exe` à la place de `python`.
@@ -208,3 +216,11 @@ python src/manage.py showmigrations
 | Les anciens clients ne s’affichent plus après un déplacement du code | Vérifier que la base attendue se trouve dans `src/db.sqlite3`. |
 | Le navigateur conserve un ancien script ou style | Effectuer un rechargement forcé de la page, par exemple **Ctrl+F5**. |
 
+### Promotions temporaires
+
+Après mise à jour, appliquer `python src/manage.py migrate` sur PostgreSQL.
+Le Propriétaire peut planifier les promotions et leurs succursales dans
+l’administration. Les promotions remplacent la fidélité habituelle pendant leurs
+dates inclusives et possèdent des compteurs et des cafés gratuits distincts,
+qui expirent en fin de promotion. Le numéro de promotion reste dans l’historique
+et dans les rapports détaillés. Voir [les modalités et la migration](docs/migration.md#promotions-temporaires-migration-0019).
