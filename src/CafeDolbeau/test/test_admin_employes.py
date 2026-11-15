@@ -132,11 +132,11 @@ class AdministrationEmployesTests(TestCase):
         url = reverse("admin:auth_user_password_change", args=[employe.pk])
         self.assertEqual(self.client.get(url).status_code, 200)
         response = self.client.post(url, {
-            "password1": "456", "password2": "456", "usable_password": "true",
+            "password1": "Cafe-Modification-2026!", "password2": "Cafe-Modification-2026!", "usable_password": "true",
         })
         self.assertRedirects(response, reverse("admin:CafeDolbeau_employe_change", args=[employe.pk]))
         employe.refresh_from_db()
-        self.assertTrue(employe.check_password("456"))
+        self.assertTrue(employe.check_password("Cafe-Modification-2026!"))
 
     def test_employes_ordinaires_ne_peuvent_pas_creer_de_comptes(self):
         for role in ("Barista",):

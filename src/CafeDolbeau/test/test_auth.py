@@ -8,8 +8,8 @@ from django.urls import path, reverse
 
 from config.urls import urlpatterns as application_urls
 
-from ..models import AffectationEmployeSuccursale, Client, Employe, TransactionCafe
-from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, gerant_requis
+from ..models import AffectationEmployeSuccursale, Client, Employe, Succursale, TransactionCafe
+from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, SESSION_SUCCURSALE, gerant_requis
 
 
 def nouvelle_vue(request):
@@ -254,6 +254,94 @@ class AuthentificationTests(TestCase):
         self.assertRedirects(
             self.client.get(reverse("accueil_succursale", args=[1])), self.connexion_url(reverse("accueil_succursale", args=[1])),
         )
+
+    def preparer_changement_employe(self, *, gerant_autorise=True):
+        succursale = Succursale.objects.create(nom="Caisse du Lac")
+        AffectationEmployeSuccursale.objects.create(employe_id=self.barista.pk, succursale=succursale)
+        if gerant_autorise:
+            AffectationEmployeSuccursale.objects.create(employe_id=self.gerant.pk, succursale=succursale)
+        self.client.force_login(self.barista)
+        self.client.get(reverse("ajouter_cafes", args=[succursale.pk, self.personne.pk]))
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], succursale.pk)
+        self.client.post(reverse("deconnexion"), {"succursale_id": succursale.pk})
+        return succursale
+
+    def test_changement_employe_conserve_la_caisse_et_affiche_son_nom(self):
+        succursale = self.preparer_changement_employe()
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], succursale.pk)
+        self.assertContains(self.client.get(reverse("connexion")), succursale.nom)
+        response = self.client.post(reverse("connexion"), {
+            "username": self.gerant.username, "password": self.mot_de_passe,
+        })
+        self.assertRedirects(response, reverse("accueil_succursale", args=[succursale.pk]))
+        self.assertEqual(self.client.session[SESSION_KEY], str(self.gerant.pk))
+
+    def test_changement_employe_sans_acces_refuse_la_connexion(self):
+        succursale = self.preparer_changement_employe(gerant_autorise=False)
+        response = self.client.post(reverse("connexion"), {
+            "username": self.gerant.username, "password": self.mot_de_passe,
+        })
+        self.assertContains(response, "Vous n’avez pas accès à la succursale")
+        self.assertContains(response, succursale.nom)
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], succursale.pk)
+        self.assertEqual(TransactionCafe.objects.count(), 0)
+
+    def test_retrait_affectation_entre_deconnexion_et_connexion_est_verifie(self):
+        succursale = self.preparer_changement_employe()
+        self.gerant.affectations_succursales.filter(succursale=succursale).delete()
+        response = self.client.post(reverse("connexion"), {
+            "username": self.gerant.username, "password": self.mot_de_passe,
+        })
+        self.assertTrue(response.context["form"].non_field_errors())
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+    def test_proprietaire_et_superutilisateur_reprennent_toute_caisse(self):
+        proprietaire = Employe.objects.create_user("proprietaire-releve", password=self.mot_de_passe)
+        proprietaire.groups.add(Group.objects.get(name="Propriétaire"))
+        for acteur in (proprietaire, self.superutilisateur):
+            succursale = self.preparer_changement_employe(gerant_autorise=False)
+            response = self.client.post(reverse("connexion"), {
+                "username": acteur.username, "password": self.mot_de_passe,
+            })
+            self.assertRedirects(response, reverse("accueil_succursale", args=[succursale.pk]))
+
+    def test_deconnexion_ne_conserve_pas_les_donnees_privees_de_session(self):
+        self.client.force_login(self.barista)
+        self.client.get(reverse("accueil_succursale", args=[1]))
+        session = self.client.session
+        session["donnee_privee"] = "ancienne confirmation"
+        session.save()
+        self.client.post(reverse("deconnexion"))
+        self.assertNotIn("donnee_privee", self.client.session)
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], 1)
+
+    def test_deconnexion_depuis_rapports_conserve_la_derniere_caisse(self):
+        self.client.force_login(self.gerant)
+        self.client.get(reverse("accueil_succursale", args=[1]))
+        self.client.get(reverse("rapports"))
+        self.client.post(reverse("deconnexion"))
+        response = self.client.post(reverse("connexion"), {
+            "username": self.barista.username, "password": self.mot_de_passe,
+        })
+        self.assertRedirects(response, reverse("accueil_succursale", args=[1]))
+
+    def test_caisse_du_formulaire_prime_sur_un_autre_onglet(self):
+        self.client.force_login(self.superutilisateur)
+        autre = Succursale.objects.create(nom="Autre onglet")
+        self.client.get(reverse("accueil_succursale", args=[1]))
+        self.client.get(reverse("accueil_succursale", args=[autre.pk]))
+        self.client.post(reverse("deconnexion"), {"succursale_id": 1})
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], 1)
+
+    def test_identifiant_forge_a_la_deconnexion_ne_change_pas_la_caisse(self):
+        self.client.force_login(self.barista)
+        self.client.get(reverse("accueil_succursale", args=[1]))
+        autre = Succursale.objects.create(nom="Caisse interdite")
+        self.client.post(reverse("deconnexion"), {"succursale_id": autre.pk})
+        self.assertEqual(self.client.session[SESSION_SUCCURSALE], 1)
 
     def test_connexion_et_deconnexion_exigent_un_jeton_csrf(self):
         navigateur = Navigateur(enforce_csrf_checks=True)

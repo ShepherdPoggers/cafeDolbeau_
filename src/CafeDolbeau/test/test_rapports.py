@@ -3,8 +3,10 @@ from io import BytesIO
 from uuid import uuid4
 
 from django.contrib.auth.models import Group
+from django.db import connection
 from django.http import QueryDict
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
@@ -43,15 +45,20 @@ class RapportsTests(TestCase):
     def filtres(self, **changements):
         donnees = {
             "precision": "periode", "date_debut": "2026-10-01", "date_fin": "2026-10-31",
-            "types": ["achat", "prepaye"],
+            "types": ["achat", "prepaye"], "succursales": [1],
         }
         donnees.update(changements)
         return donnees
 
     def rapport(self, **changements):
-        form = RapportForm(self.filtres(**changements))
+        form = RapportForm(self.filtres(**changements), employe=self.gerant)
         self.assertTrue(form.is_valid(), form.errors)
-        return generer_rapport(**form.cleaned_data)
+        return self.generer(form)
+
+    def generer(self, form):
+        filtres = form.cleaned_data.copy()
+        succursales = filtres.pop("succursales")
+        return generer_rapport(**filtres, employe=self.gerant, succursale_ids=list(succursales.values_list("pk", flat=True)))
 
     def classeur(self, **changements):
         response = self.client.get(reverse("rapport_excel"), self.filtres(**changements))
@@ -59,7 +66,7 @@ class RapportsTests(TestCase):
         contenu = b"".join(response.streaming_content)
         return load_workbook(BytesIO(contenu)), response
 
-    def test_acces_page_et_export_reserves_aux_proprietaires(self):
+    def test_acces_page_et_export_proteges(self):
         for nom in ("rapports", "rapport_excel"):
             with self.subTest(nom=nom):
                 url = reverse(nom)
@@ -71,7 +78,7 @@ class RapportsTests(TestCase):
                 self.assertEqual(self.client.get(url).status_code, 200)
                 self.assertEqual(self.client.post(url).status_code, 405)
 
-    def test_lien_entete_visible_uniquement_au_proprietaire(self):
+    def test_lien_entete_visible_aux_responsables(self):
         self.assertContains(self.client.get(reverse("accueil_succursale", args=[1])), 'action="/rapports/"')
         self.client.force_login(self.barista)
         self.assertNotContains(self.client.get(reverse("accueil_succursale", args=[1])), 'action="/rapports/"')
@@ -101,7 +108,7 @@ class RapportsTests(TestCase):
             {"precision": "semaine", "date_debut": "2026-10-05", "date_fin": "2026-10-10"},
         ):
             with self.subTest(modifications=modifications):
-                form = RapportForm(self.filtres(**modifications))
+                form = RapportForm(self.filtres(**modifications), employe=self.gerant)
                 self.assertFalse(form.is_valid())
                 response = self.client.get(reverse("rapports"), self.filtres(**modifications))
                 self.assertNotIn("rapport", response.context)
@@ -110,8 +117,8 @@ class RapportsTests(TestCase):
     def test_fevrier_bissextile_et_semaines_entre_annees(self):
         valide = self.rapport(precision="mois", date_debut="2024-02-01", date_fin="2024-02-29")
         self.assertEqual(valide.groupes[0].fin, date(2024, 2, 29))
-        self.assertFalse(RapportForm(self.filtres(precision="mois", date_debut="2024-02-01", date_fin="2024-02-28")).is_valid())
-        self.assertTrue(RapportForm(self.filtres(precision="mois", date_debut="2025-02-01", date_fin="2025-02-28")).is_valid())
+        self.assertFalse(RapportForm(self.filtres(precision="mois", date_debut="2024-02-01", date_fin="2024-02-28"), employe=self.gerant).is_valid())
+        self.assertTrue(RapportForm(self.filtres(precision="mois", date_debut="2025-02-01", date_fin="2025-02-28"), employe=self.gerant).is_valid())
         rapport = self.rapport(precision="semaine", date_debut="2020-12-28", date_fin="2021-01-10")
         self.assertEqual([(g.debut, g.fin) for g in rapport.groupes], [
             (date(2020, 12, 28), date(2021, 1, 3)), (date(2021, 1, 4), date(2021, 1, 10)),
@@ -222,13 +229,14 @@ class RapportsTests(TestCase):
 
     def test_lecture_jointe_unique_et_aucune_modification_des_donnees(self):
         self.ligne(3, annulation="2026-10-07T10:00:00")
-        form = RapportForm(self.filtres(precision="transaction"))
+        form = RapportForm(self.filtres(precision="transaction"), employe=self.gerant)
         self.assertTrue(form.is_valid())
         avant = list(Client.objects.values())
         transactions = list(TransactionCafe.objects.values())
         traces = list(AnnulationTransaction.objects.values())
-        with self.assertNumQueries(1):
-            generer_rapport(**form.cleaned_data)
+        with CaptureQueriesContext(connection) as requetes:
+            self.generer(form)
+        self.assertEqual(sum('FROM "CafeDolbeau_transactioncafe"' in requete["sql"] for requete in requetes), 1)
         self.classeur(precision="transaction")
         self.assertEqual(avant, list(Client.objects.values()))
         self.assertEqual(transactions, list(TransactionCafe.objects.values()))

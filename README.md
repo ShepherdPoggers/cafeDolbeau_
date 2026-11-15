@@ -2,6 +2,7 @@
 
 Application Django pour gérer les clients, les achats de cafés, les cartes prépayées et les cafés gratuits.
 
+
 ## Auteurs
 
 - DESA07010400, Desbiens, Anthony
@@ -21,7 +22,33 @@ Application Django pour gérer les clients, les achats de cafés, les cartes pr�
 - Python 3.12 avec `pip` et `venv`.
 - Une copie du dépôt sur votre ordinateur.
 
-Les dépendances sont fixées dans `requirements.txt`, notamment Django 5.2.17. PostgreSQL est utilisé par défaut, selon la configuration `.env`. Les scripts de démonstration ci-dessous créent une base SQLite; pour utiliser cette base ensuite, définir `CAFE_DB_ENGINE=sqlite` (et `CAFE_DB_PATH` si le fichier n’est pas `src/db.sqlite3`).
+Les dépendances sont fixées dans `requirements.txt`, notamment Django 5.2.17. PostgreSQL est utilisé par défaut, selon la configuration `.env`. Les scripts historiques de démonstration peuvent produire une base SQLite pour l’import initial. Le développement V3 utilise aussi PostgreSQL, avec la configuration locale explicite décrite dans le [guide de déploiement](docs/deploiement.md#développement-local-séparé).
+
+
+## Démarrage de production V3
+
+```bash
+cp .env.example .env
+python scripts/configurer_env.py
+docker compose up --build
+```
+
+Sur une installation existante, conserver `.env` et compléter ses variables plutôt
+que de l’écraser. Le script génère les secrets manquants sans changer les valeurs
+existantes. L’application est accessible sur **http://localhost:8000** via nginx
+et Gunicorn, avec `DEBUG=False` et PostgreSQL interne persistant.
+
+La [procédure de déploiement](docs/deploiement.md) précise les commandes Windows,
+les migrations automatiques, la création du premier compte, l’import SQLite V2,
+le changement de domaine et le développement séparé. Les procédures V1/V2 plus bas
+concernent les versions historiques et leurs données de démonstration.
+
+Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
+
+```bash
+docker compose --profile test run --build --rm tests
+```
+
 
 ## Démarrer une V2 neuve avec les données de test
 
@@ -158,18 +185,6 @@ Sous Windows :
 
 Suivre les indications du terminal, puis se connecter à [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) lorsque le serveur est démarré. L’accès à la page d’accueil nécessite un compte actif disposant des permissions du café.
 
-### Planifier la règle du café gratuit
-
-Dans l’administration, les gérants et superutilisateurs peuvent ouvrir « Paramètres du café », saisir le nombre de cafés achetés pour un café gratuit et choisir la date d’entrée en vigueur. Le seuil actuellement en vigueur est affiché à titre de référence. L’ancienne règle reste active jusqu’à minuit à la date choisie, heure du Québec ; la nouvelle règle s’applique ensuite automatiquement aux prochains achats. Choisir aujourd’hui pour un changement immédiat.
-
-Une modification remplace toute planification précédente. Les cafés accumulés servent au calcul avec le nouveau seuil, sans recalculer les transactions ni les soldes existants.
-
-### Supprimer un client
-
-Les gérants et superutilisateurs peuvent supprimer un client depuis sa fiche dans l’administration, ou plusieurs clients avec l’action « Supprimer les clients sélectionnés ». La confirmation affiche les cafés prépayés et gratuits qui seront perdus. Si les soldes changent entre l’affichage et la validation, une nouvelle confirmation est nécessaire.
-
-La suppression est définitive, mais les transactions et leurs annulations sont conservées sous « Client supprimé ». Ce client fictif est masqué dans la gestion courante des clients. Les gérants peuvent encore annuler ses transactions depuis l’administration des transactions ; ces annulations alimentent les rapports sans rétablir de crédits utilisables.
-
 
 ## Lancer tous les tests
 
@@ -215,12 +230,3 @@ python src/manage.py showmigrations
 | Le port 8000 est déjà utilisé | Lancer `python src/manage.py runserver 8001`, puis ouvrir `http://127.0.0.1:8001/`. |
 | Les anciens clients ne s’affichent plus après un déplacement du code | Vérifier que la base attendue se trouve dans `src/db.sqlite3`. |
 | Le navigateur conserve un ancien script ou style | Effectuer un rechargement forcé de la page, par exemple **Ctrl+F5**. |
-
-### Promotions temporaires
-
-Après mise à jour, appliquer `python src/manage.py migrate` sur PostgreSQL.
-Le Propriétaire peut planifier les promotions et leurs succursales dans
-l’administration. Les promotions remplacent la fidélité habituelle pendant leurs
-dates inclusives et possèdent des compteurs et des cafés gratuits distincts,
-qui expirent en fin de promotion. Le numéro de promotion reste dans l’historique
-et dans les rapports détaillés. Voir [les modalités et la migration](docs/migration.md#promotions-temporaires-migration-0019).

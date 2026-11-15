@@ -1,0 +1,6 @@
+# Utilisation explicite : docker compose -f compose.yaml -f compose.dev.yaml up -d db
+# Le port PostgreSQL n’est publié que pour le développement local.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"

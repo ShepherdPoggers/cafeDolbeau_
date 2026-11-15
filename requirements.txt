@@ -4,3 +4,4 @@ openpyxl==3.1.5
 psycopg[binary]==3.3.8
 python-dotenv==1.2.4
 sqlparse==0.6.0
+gunicorn==27.0.1

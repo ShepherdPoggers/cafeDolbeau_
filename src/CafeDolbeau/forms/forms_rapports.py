@@ -2,14 +2,25 @@ from datetime import date
 
 from django import forms
 
+from ..models import Succursale
+from ..permissions import succursales_autorisees
 from ..rapports import PRECISIONS, TYPES_RAPPORT, dernier_jour_mois
 
 
 class RapportForm(forms.Form):
+    succursales = forms.ModelMultipleChoiceField(
+        label="Succursales", queryset=Succursale.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        error_messages={"required": "Choisissez au moins une succursale."},
+    )
     precision = forms.ChoiceField(label="Niveau de détail", choices=PRECISIONS)
     date_debut = forms.DateField(label="Date de début", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
     date_fin = forms.DateField(label="Date de fin", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
     types = forms.MultipleChoiceField(label="Types de transactions", choices=TYPES_RAPPORT, widget=forms.CheckboxSelectMultiple)
+
+    def __init__(self, *args, employe, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["succursales"].queryset = succursales_autorisees(employe).order_by("pk")
 
     def clean(self):
         donnees = super().clean()

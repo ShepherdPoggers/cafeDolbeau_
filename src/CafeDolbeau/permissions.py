@@ -10,6 +10,7 @@ from .models import Client, Employe, FusionClient, Succursale, TransactionCafe
 PERMISSION_BASE = "CafeDolbeau.acces_base"
 PERMISSION_GERANT = "CafeDolbeau.acces_gerant"
 PERMISSION_PROPRIETAIRE = "CafeDolbeau.acces_proprietaire"
+SESSION_SUCCURSALE = "succursale_courante_id"
 
 
 def acces_base_requis(view):
@@ -50,6 +51,8 @@ def succursale_requise(view):
     def controle(request, *args, succursale_id, **kwargs):
         request.succursale = get_object_or_404(Succursale, pk=succursale_id)
         verifier_acces_succursale(request.user, succursale_id)
+        if request.session.get(SESSION_SUCCURSALE) != succursale_id:
+            request.session[SESSION_SUCCURSALE] = succursale_id
         return view(request, *args, **kwargs)
     return acces_base_requis(controle)
 

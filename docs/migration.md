@@ -1,53 +1,5 @@
 # Migrer les données de la V1 vers la V2
 
-## Transférer SQLite vers PostgreSQL
-
-Depuis la racine du dépôt, avec l’environnement virtuel activé et PostgreSQL configuré dans `.env`, arrêter l’application puis exécuter :
-
-```bash
-python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
-```
-
-Le script prend un instantané SQLite, journal WAL compris, et applique automatiquement les migrations manquantes **sur cette copie temporaire**. Le fichier `src/db.sqlite3` reste inchangé, même s’il ne contient pas encore les tables de succursales et d’affectations. Les rôles existants sont conservés.
-
-La destination PostgreSQL peut être sans tables ou avoir déjà été initialisée par `python src/manage.py migrate`. Le script vérifie dans ce dernier cas qu’elle ne contient que les valeurs initiales des migrations. Il refuse une destination contenant des comptes, clients, transactions, paramètres personnalisés ou tables étrangères; il ne les supprime pas automatiquement.
-
-La création du schéma et l’importation sont effectuées dans une transaction PostgreSQL. Les données importées sont comparées à la copie SQLite migrée et les séquences d’identifiants sont ajustées. En cas d’erreur, la destination retrouve son état précédent. Une seconde exécution après un transfert réussi est refusée pour éviter d’écraser les données.
-
-## Ajouter les succursales à une installation existante
-
-Après avoir arrêté le serveur et sauvegardé la base utilisée par l’application, appliquer la mise à jour depuis la racine du dépôt, avec l’environnement virtuel activé :
-
-```bash
-python src/manage.py migrate
-python src/manage.py check
-```
-
-La migration `0017_succursales` crée la succursale d’identifiant `1`, nommée « Succursale #1 », et lui associe toutes les transactions existantes, y compris les transactions annulées et celles des clients supprimés. Les dates, les quantités et les soldes des clients sont conservés. Cette migration fonctionne avec PostgreSQL et SQLite; elle s’applique aussi automatiquement aux installations neuves.
-
-La fidélité reste commune à toutes les succursales. Les opérations saisies dans les formulaires utilisent maintenant la succursale de l’URL. Le service `ajouter_cafes` exige le paramètre `succursale_id` et vérifie les droits de l’employé; aucune opération de caisse ne choisit implicitement la succursale nº 1.
-
-Les Propriétaires et superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants consultent et annulent les transactions des succursales auxquelles ils sont affectés, sans accès à la gestion des succursales.
-
-Pour un transfert de SQLite vers PostgreSQL, le script applique cette migration sur sa copie temporaire et conserve les succursales et leurs liens avec les transactions.
-
-## Ajouter le Propriétaire et les affectations
-
-La même commande `python src/manage.py migrate` applique `0018_proprietaire_affectations`. Elle crée le groupe Propriétaire et les affectations des Baristas et Gérants existants à la succursale nº 1, y compris les comptes désactivés. Elle conserve les rôles existants, les identifiants, les mots de passe, les soldes et l’historique. Aucun compte n’est automatiquement promu Propriétaire.
-
-Après la migration :
-
-1. Se connecter avec un superutilisateur sur `/admin/`.
-2. Créer ou modifier un compte employé, choisir le rôle **Propriétaire**, puis enregistrer. Ce compte obtient tous les droits métier et toutes les succursales sans devenir superutilisateur Django.
-3. Le Propriétaire peut ensuite créer des Gérants et configurer les succursales de chaque employé. Un gérant peut créer uniquement des Baristas et gérer leurs affectations dans ses propres succursales. Les affectations hors de son périmètre sont conservées.
-4. Remplacer les adresses des caisses par `/succursales/1/`, `/succursales/2/`, etc. Le nom de la succursale est affiché dans l’en-tête. `/` affiche les succursales accessibles, sans permettre d’opération de caisse; les anciennes adresses `/clients/.../cafes/` ne sont plus utilisées.
-
-Les dix dernières transactions de chaque client restent visibles pour tous les employés autorisés à accéder à une caisse, toutes succursales confondues. Le barista peut annuler ses propres transactions récentes uniquement dans sa succursale courante. Le gérant peut annuler les transactions de toutes ses succursales; le Propriétaire peut annuler dans tout le réseau. Ces corrections restent des annulations tracées, sans suppression physique de transactions.
-
-Les Gérants conservent les fonctions globales de gestion des clients, de fusion, de correction des soldes et de paramétrage de la fidélité. Les rapports et exports Excel sont provisoirement réservés aux Propriétaires et superutilisateurs; leur filtrage par succursale sera traité ultérieurement. Un retrait d’affectation interdit les nouvelles opérations de caisse et annulations concernées, sans modifier l’historique.
-
-Lors d’un transfert SQLite vers PostgreSQL, le script applique également `0018` sur sa copie temporaire; aucune mise à jour manuelle du fichier SQLite source n’est nécessaire. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
-
 ## Conservation des données
 
 Les migrations V1 `0001` à `0008` sont identiques à celles des tags existants, dont `v1.0.0.4`. La V2 applique ensuite les migrations `0009` à `0016` sans supprimer les clients ni recalculer leurs soldes.
@@ -176,6 +128,226 @@ Les 12 transactions existantes conservent leurs identifiants, clients, types, qu
 
 La conservation des soldes et de l’historique a également été vérifiée avec une base créée par le code du tag `v1.0.0.4`. Les fichiers des migrations V1 ont été comparés à ceux des cinq tags V1 : aucune différence.
 
+# Migrer les données de la V2 vers la V3
+
+La V2 utilise le fichier SQLite `src/db.sqlite3`. La V3 utilise PostgreSQL pour
+l’exploitation. Le transfert s’effectue une seule fois avec
+`scripts/migrer_sqlite_vers_postgres.py` : ce script crée le schéma PostgreSQL,
+applique les migrations nécessaires et transfère les données. Il n’est pas
+nécessaire de migrer manuellement le fichier SQLite avant l’importation.
+
+Toutes les commandes ci-dessous s’exécutent **à la racine du dépôt**, dans le
+dossier contenant `src/`, `scripts/`, `compose.yaml` et `requirements.txt`.
+
+## 1. Arrêter la V2 et sauvegarder les données
+
+1. Arrêter le serveur Django V2 et toute autre application qui écrit dans SQLite.
+2. Conserver une copie du code et de la configuration V2 pour pouvoir revenir à
+   cette version si nécessaire.
+3. Avec Python disponible, sauvegarder la base V2 existante. Choisir un autre nom
+   si `db-v2-sauvegarde.sqlite3` existe déjà :
+
+   ```bash
+   python -c "import sqlite3; source = sqlite3.connect('file:src/db.sqlite3?mode=ro', uri=True); copie = sqlite3.connect('db-v2-sauvegarde.sqlite3'); source.backup(copie); copie.close(); source.close()"
+   ```
+
+   Cette sauvegarde inclut les données du journal WAL, s’il existe. Le fichier
+   source est ouvert en lecture seule.
+
+4. Avant de remplacer le code V2, enregistrer les soldes avec sa configuration
+   SQLite habituelle pour pouvoir les comparer après le transfert :
+
+   ```bash
+   python src/manage.py balances > balances-v2.csv
+   ```
+
+## 2. Installer le code V3 et préparer les secrets
+
+Installer Docker et Docker Compose avec Buildx, puis récupérer le code V3 en
+conservant le fichier SQLite V2. Dans cette procédure, son chemin reste
+`src/db.sqlite3`. Toutes les commandes suivantes partent de la racine du dépôt.
+
+Pour une nouvelle configuration :
+
+```bash
+cp .env.example .env
+python scripts/configurer_env.py
+```
+
+Sous PowerShell, utiliser `Copy-Item .env.example .env`, puis
+`py scripts/configurer_env.py` si nécessaire. Si `.env` existe déjà, le conserver,
+compléter les variables manquantes à partir de `.env.example`, puis lancer le
+script. Celui-ci génère uniquement les secrets vides, sans afficher leurs valeurs.
+Une alternative sans Python local est documentée dans le
+[guide de déploiement](deploiement.md#installation-neuve).
+
+## 3. Configurer la destination PostgreSQL
+
+Vérifier les valeurs suivantes dans `.env` :
+
+```dotenv
+POSTGRES_DB=cafe_dolbeau
+POSTGRES_USER=cafe_dolbeau
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+CAFE_DB_ENGINE=postgresql
+HTTP_PORT=8000
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+```
+
+`SECRET_KEY` et `POSTGRES_PASSWORD` sont renseignés par le script de préparation.
+La destination doit être vide ou contenir uniquement les valeurs initiales des
+migrations. Ne pas y créer de compte ni y charger de données avant l’import.
+
+Compose utilise le nom interne `db` pour PostgreSQL. Son port n’est pas publié sur
+l’ordinateur : le transfert s’exécute dans un conteneur du réseau interne.
+Le fichier source est choisi par `--source`, indépendamment de `CAFE_DB_PATH`.
+Les variables exportées dans le terminal sont prioritaires sur `.env` ; vérifier
+qu’elles ne pointent pas vers une autre base. Le mot de passe d’un volume déjà
+initialisé ne change pas simplement en modifiant `.env`.
+
+## 4. Construire et démarrer la pile V3
+
+```bash
+docker compose up --build -d
+docker compose ps -a
+```
+
+La pile démarre PostgreSQL, applique les migrations dans le service `init`,
+collecte les fichiers statiques, puis démarre Gunicorn et nginx. Le service `init`
+doit se terminer avec le code `0` ; les services permanents deviennent `healthy`.
+
+Il est normal que le schéma PostgreSQL existe déjà avant le transfert : le script
+accepte cet état initial. Ne pas créer de superutilisateur maintenant. Arrêter
+les accès applicatifs avant l’import, en laissant PostgreSQL actif :
+
+```bash
+docker compose stop proxy app
+```
+
+En cas de problème, consulter `docker compose logs`. Une erreur de construction
+mentionnant un plugin `docker-buildx` absent demande de réparer l’installation
+Docker de l’ordinateur.
+
+## 5. Transférer le SQLite V2 en lecture seule
+
+Sous Linux ou macOS :
+
+```bash
+docker compose run --rm --no-deps -v "$PWD/src:/import:ro" app python scripts/migrer_sqlite_vers_postgres.py --source /import/db.sqlite3
+```
+
+Sous Windows PowerShell :
+
+```powershell
+docker compose run --rm --no-deps -v "${PWD}/src:/import:ro" app python scripts/migrer_sqlite_vers_postgres.py --source /import/db.sqlite3
+```
+
+Adapter le répertoire monté si le SQLite V2 est ailleurs. Monter le répertoire
+permet d’inclure les éventuels fichiers `db.sqlite3-wal` et `db.sqlite3-shm`.
+Le montage est en lecture seule. Sous Linux, si le fichier n’est lisible que par
+son propriétaire, ajouter `--user "$(id -u):$(id -g)"` à la commande `run`.
+
+**Cette commande réalise le transfert et les migrations nécessaires.** Le script
+prend un instantané cohérent de SQLite et applique les migrations manquantes
+uniquement sur cette copie temporaire. Le SQLite original reste inchangé.
+
+Il conserve les identifiants, mots de passe, états d’activation et rôles : un
+Barista reste Barista, un Gérant reste Gérant et un compte sans rôle reste sans
+rôle. Les clients, leurs soldes, les dates et quantités des transactions, les
+annulations et les fusions sont conservés. L’historique V2 est rattaché à la
+succursale nº 1 ; les Baristas et Gérants existants y sont affectés. Aucun compte
+n’est automatiquement promu Propriétaire.
+
+L’import est transactionnel, vérifie les données et ajuste les séquences
+PostgreSQL. En cas d’erreur, la destination retrouve son état précédent. Une
+réussite affiche `Transfert vérifié`, les nombres de clients, transactions et
+comptes, puis `SQLite conservé`.
+
+Si la destination contient déjà des comptes, clients, transactions, paramètres
+personnalisés ou tables étrangères, le script refuse le transfert sans les
+effacer. Choisir alors une base vide. Une seconde exécution après un transfert
+réussi est aussi refusée. Changer `POSTGRES_DB` dans `.env` ne crée pas à lui seul
+une nouvelle base dans un volume PostgreSQL déjà initialisé.
+
+## 6. Vérifier les données et les accès
+
+```bash
+docker compose run --rm --no-deps app python src/manage.py check
+docker compose run --rm --no-deps app python src/manage.py showmigrations
+docker compose run --rm --no-deps app python src/manage.py balances > balances-v3.csv
+```
+
+Les migrations doivent être marquées `[X]`. Comparer `balances-v3.csv` avec
+`balances-v2.csv`. Aucun `migrate` supplémentaire n’est nécessaire après un
+transfert réussi.
+
+Un superutilisateur V2 conserve son compte et son mot de passe. Si la V2 n’en
+possédait aucun, créer le premier superutilisateur **après l’import** :
+
+```bash
+docker compose run --rm --no-deps app python src/manage.py createsuperuser
+```
+
+## 7. Mettre la V3 en service
+
+```bash
+docker compose up -d
+```
+
+Ouvrir <http://localhost:8000/connexion/>, puis vérifier les rôles, les soldes et
+les historiques, y compris les transactions annulées et les clients supprimés.
+Avec un superutilisateur, attribuer le premier rôle Propriétaire dans `/admin/`,
+puis configurer les succursales et affectations. La caisse initiale est
+`/succursales/1/`. Les comptes sans rôle demandent une attribution explicite :
+leur nom d’utilisateur ne détermine pas leur rôle.
+
+La V3 fonctionne désormais uniquement sur PostgreSQL. Conserver le SQLite V2 et
+sa sauvegarde comme archives. `docker compose down` conserve les données, tandis
+que `docker compose down -v` supprime les volumes : ne pas utiliser cette dernière
+commande pour un simple arrêt.
+
+En cas d’échec avant la mise en service, garder la V3 arrêtée, corriger la cause
+et relancer l’import sur une destination admissible. Le code et la configuration
+V2 peuvent reprendre le SQLite conservé. Après de nouvelles opérations dans
+PostgreSQL, cette archive ne contient plus les données récentes : un retour
+arrière doit en tenir compte.
+
+## Ajouter les succursales à une installation existante
+
+Après avoir arrêté le serveur et sauvegardé la base utilisée par l’application, appliquer la mise à jour depuis la racine du dépôt, avec l’environnement virtuel activé :
+
+```bash
+python src/manage.py migrate
+python src/manage.py check
+```
+
+La migration `0017_succursales` crée la succursale d’identifiant `1`, nommée « Succursale #1 », et lui associe toutes les transactions existantes, y compris les transactions annulées et celles des clients supprimés. Les dates, les quantités et les soldes des clients sont conservés. Cette migration fonctionne avec PostgreSQL et SQLite; elle s’applique aussi automatiquement aux installations neuves.
+
+La fidélité reste commune à toutes les succursales. Les opérations saisies dans les formulaires utilisent maintenant la succursale de l’URL. Le service `ajouter_cafes` exige le paramètre `succursale_id` et vérifie les droits de l’employé; aucune opération de caisse ne choisit implicitement la succursale nº 1.
+
+Les Propriétaires et superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants consultent et annulent les transactions des succursales auxquelles ils sont affectés, sans accès à la gestion des succursales.
+
+Pour un transfert de SQLite vers PostgreSQL, le script applique cette migration sur sa copie temporaire et conserve les succursales et leurs liens avec les transactions.
+
+## Ajouter le Propriétaire et les affectations
+
+La même commande `python src/manage.py migrate` applique `0018_proprietaire_affectations`. Elle crée le groupe Propriétaire et les affectations des Baristas et Gérants existants à la succursale nº 1, y compris les comptes désactivés. Elle conserve les rôles existants, les identifiants, les mots de passe, les soldes et l’historique. Aucun compte n’est automatiquement promu Propriétaire.
+
+Après la migration :
+
+1. Se connecter avec un superutilisateur sur `/admin/`.
+2. Créer ou modifier un compte employé, choisir le rôle **Propriétaire**, puis enregistrer. Ce compte obtient tous les droits métier et toutes les succursales sans devenir superutilisateur Django.
+3. Le Propriétaire peut ensuite créer des Gérants et configurer les succursales de chaque employé. Un gérant peut créer uniquement des Baristas et gérer leurs affectations dans ses propres succursales. Les affectations hors de son périmètre sont conservées.
+4. Remplacer les adresses des caisses par `/succursales/1/`, `/succursales/2/`, etc. Le nom de la succursale est affiché dans l’en-tête. `/` affiche les succursales accessibles, sans permettre d’opération de caisse; les anciennes adresses `/clients/.../cafes/` ne sont plus utilisées.
+
+Les dix dernières transactions de chaque client restent visibles pour tous les employés autorisés à accéder à une caisse, toutes succursales confondues. Le barista peut annuler ses propres transactions récentes uniquement dans sa succursale courante. Le gérant peut annuler les transactions de toutes ses succursales; le Propriétaire peut annuler dans tout le réseau. Ces corrections restent des annulations tracées, sans suppression physique de transactions.
+
+Les Gérants conservent les fonctions globales de gestion des clients, de fusion, de correction des soldes et de paramétrage de la fidélité. Les rapports et exports Excel sont accessibles aux Gérants pour leurs succursales et aux Propriétaires et superutilisateurs pour tout le réseau. Les succursales choisies sont obligatoires et les droits sont revérifiés avant chaque génération. Un retrait d’affectation interdit les nouvelles opérations de caisse et annulations concernées, sans modifier l’historique.
+
+Lors d’un transfert SQLite vers PostgreSQL, le script applique également `0018` sur sa copie temporaire; aucune mise à jour manuelle du fichier SQLite source n’est nécessaire. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
+
 ## Promotions temporaires (migration 0019)
 
 L’application fonctionne sur PostgreSQL. Pour une installation déjà transférée :
@@ -194,44 +366,5 @@ Pour l’import initial d’un fichier SQLite V2, utiliser uniquement :
 python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
 ```
 
-Le script met à jour une copie temporaire de la source puis importe les données
-vérifiées dans PostgreSQL. Le fichier SQLite original est conservé ; il n’est pas
-utilisé pour l’exploitation des promotions.
 
-Le Propriétaire ou un superutilisateur crée les promotions dans l’administration,
-choisit les succursales participantes et peut programmer les périodes suivantes.
-Les dates sont inclusives, de minuit à minuit le lendemain de la fin, heure du Québec.
-Une même succursale ne peut pas participer à deux promotions aux dates communes.
-Après la première transaction associée, le seuil, le début et les succursales sont
-figés. Le nom peut changer ; la fin peut être prolongée avant expiration, sans
-chevauchement. Une promotion utilisée ne peut pas être supprimée.
 
-La promotion remplace la fidélité habituelle pour les achats directs participants.
-Sa progression et ses gratuits sont partagés entre les succursales participantes,
-mais restent distincts des soldes habituels. Les cafés promotionnels sont utilisés
-en premier, puis les gratuits habituels, puis les prépayés. Les cartes conservent
-leur bonus habituel et ne font pas progresser les promotions.
-
-Après expiration, le compteur disparaît de la caisse et ses gratuits sont
-inutilisables. Les compteurs et les références aux promotions restent conservés
-pour les rapports et les annulations. Une annulation après expiration ne réactive
-pas les gratuits. Les fusions additionnent les gratuits et conservent le reste de
-progression combiné, sans accorder de nouveau cadeau.
-
-Les rapports détaillés et leur export Excel affichent le numéro de promotion,
-y compris pour les annulations. Les transactions historiques sans promotion
-conservent une référence vide.
-
-### Annuler une promotion en cours (migration 0020)
-
-Appliquer `python src/manage.py migrate`, puis ouvrir **Administration → Promotions**.
-Le Propriétaire et le superutilisateur disposent du lien **Annuler la promotion**,
-également disponible sur la fiche. La confirmation propose un motif facultatif.
-
-L’annulation est immédiate, définitive et commune à toutes les succursales de la
-promotion. La fidélité habituelle reprend ; les progressions et gratuits
-promotionnels deviennent inutilisables. Les compteurs, achats et transactions
-restent conservés, ainsi que la date, l’auteur et le motif de l’annulation.
-Les annulations de transactions restent possibles sans réactiver la promotion.
-Les succursales peuvent recevoir une promotion de remplacement aux mêmes dates.
-La caisse ouverte reflète l’arrêt lors de son actualisation automatique.

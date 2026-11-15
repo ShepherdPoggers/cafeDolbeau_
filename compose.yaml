@@ -1,20 +1,134 @@
+x-app-environment: &app-environment
+  DJANGO_SETTINGS_MODULE: config.settings
+  SECRET_KEY: ${SECRET_KEY:?Exécutez python scripts/configurer_env.py}
+  DJANGO_DEBUG: "false"
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+  DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+  DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-false}
+  DJANGO_SESSION_COOKIE_SECURE: ${DJANGO_SESSION_COOKIE_SECURE:-false}
+  DJANGO_CSRF_COOKIE_SECURE: ${DJANGO_CSRF_COOKIE_SECURE:-false}
+  DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-0}
+  DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS: ${DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS:-false}
+  DJANGO_SECURE_HSTS_PRELOAD: ${DJANGO_SECURE_HSTS_PRELOAD:-false}
+  DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
+  CAFE_DB_ENGINE: postgresql
+  POSTGRES_DB: ${POSTGRES_DB:-cafe_dolbeau}
+  POSTGRES_USER: ${POSTGRES_USER:-cafe_dolbeau}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+
 services:
   db:
-    image: postgres:17-bookworm
+    image: postgres:17.9-bookworm
+    user: postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Copiez .env.example vers .env}
-      POSTGRES_USER: ${POSTGRES_USER:?Copiez .env.example vers .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Renseignez POSTGRES_PASSWORD dans .env}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-cafe_dolbeau}
+      POSTGRES_USER: ${POSTGRES_USER:-cafe_dolbeau}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
-      timeout: 5s
-      retries: 10
+      timeout: 3s
+      retries: 12
       start_period: 10s
+    restart: unless-stopped
+
+  init:
+    image: cafe-dolbeau-init:local
+    build:
+      context: .
+      target: production
+    environment: *app-environment
+    command: ["sh", "-ec", "python src/manage.py migrate --noinput && python src/manage.py collectstatic --noinput"]
+    volumes:
+      - staticfiles:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    image: cafe-dolbeau-app:local
+    build:
+      context: .
+      target: production
+    environment:
+      <<: *app-environment
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-30}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "docker/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  proxy:
+    image: cafe-dolbeau-proxy:local
+    build:
+      context: .
+      dockerfile: docker/proxy.Dockerfile
+    environment:
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-http}
+    ports:
+      - "${HTTP_BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8000}:8080"
+    volumes:
+      - staticfiles:/app/staticfiles:ro
+    depends_on:
+      app:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD-SHELL", "host=$${DJANGO_ALLOWED_HOSTS%%,*}; host=$${host#.}; [ \"$$host\" != '*' ] || host=localhost; wget -q -T 3 --header=\"Host: $$host\" -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+  db-test:
+    profiles: ["test"]
+    image: postgres:17.9-bookworm
+    user: postgres
+    environment:
+      POSTGRES_DB: cafe_tests
+      POSTGRES_USER: cafe_tests
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+
+  tests:
+    profiles: ["test"]
+    image: cafe-dolbeau-tests:local
+    build:
+      context: .
+      target: tests
+    environment:
+      <<: *app-environment
+      POSTGRES_DB: cafe_tests
+      POSTGRES_USER: cafe_tests
+      POSTGRES_HOST: db-test
+    depends_on:
+      db-test:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  staticfiles:
+  postgres_test_data:

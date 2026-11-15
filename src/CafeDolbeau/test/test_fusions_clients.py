@@ -400,7 +400,7 @@ class FusionClientTests(TestCase):
         annuler_operation(ligne.pk, self.gerant, succursale_id=1)
         self.acheter(self.source)
         date = timezone.localdate()
-        parametres = dict(date_debut=date, date_fin=date, types=[valeur for valeur, _ in TransactionCafe.Type.choices], precision="transaction")
+        parametres = dict(employe=self.gerant, succursale_ids=[1], date_debut=date, date_fin=date, types=[valeur for valeur, _ in TransactionCafe.Type.choices], precision="transaction")
         avant = generer_rapport(**parametres)
         fusion = self.fusionner()
         apres = generer_rapport(**parametres)

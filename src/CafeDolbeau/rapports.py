@@ -4,13 +4,15 @@ from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import TransactionCafe
+from .models import Employe, TransactionCafe
+from .permissions import PERMISSION_GERANT, succursales_autorisees
 
 
 FUSEAU_RAPPORT = ZoneInfo("America/Toronto")
@@ -76,6 +78,8 @@ class EvenementRapport:
     enregistrees: int
     annulees: int
     promotion_id: int | None = None
+    succursale_id: int | None = None
+    succursale: str = ""
 
     @property
     def net(self):
@@ -92,6 +96,7 @@ class Rapport:
     totaux: list
     groupes: list
     evenements: list
+    succursales: tuple
 
     @property
     def total(self):
@@ -129,20 +134,37 @@ def _groupes(debut, fin, precision, categories):
     return groupes
 
 
-def generer_rapport(*, date_debut, date_fin, types, precision):
+def generer_rapport(*, date_debut, date_fin, types, precision, employe, succursale_ids):
     """Compte les événements à leur date, indépendamment des soldes actuels."""
+    try:
+        acteur = Employe.objects.get(pk=employe.pk)
+    except Employe.DoesNotExist:
+        raise PermissionDenied
+    if not acteur.is_active or not acteur.has_perm(PERMISSION_GERANT):
+        raise PermissionDenied
+    try:
+        identifiants = tuple(succursale_ids)
+    except TypeError:
+        raise ValidationError("Choisissez au moins une succursale valide.")
+    if not identifiants or any(type(pk) is not int or pk <= 0 for pk in identifiants):
+        raise ValidationError("Choisissez au moins une succursale valide.")
+    identifiants = set(identifiants)
+    succursales = tuple(succursales_autorisees(acteur).filter(pk__in=identifiants).order_by("pk"))
+    if len(succursales) != len(identifiants):
+        raise PermissionDenied
     debut = datetime.combine(date_debut, time.min, FUSEAU_RAPPORT)
     fin_exclusive = datetime.combine(date_fin + timedelta(days=1), time.min, FUSEAU_RAPPORT)
     categories, colonnes = _categories(types)
     groupes = _groupes(date_debut, date_fin, precision, categories)
     groupes_par_date = {groupe.debut: groupe for groupe in groupes}
     evenements = []
-    lignes = TransactionCafe.objects.filter(type_transaction__in=types).filter(
+    lignes = TransactionCafe.objects.filter(type_transaction__in=types, succursale_id__in=identifiants).filter(
         Q(date_creation__gte=debut, date_creation__lt=fin_exclusive)
         | Q(annulation__date_annulation__gte=debut, annulation__date_annulation__lt=fin_exclusive)
     ).order_by().values(
         "pk", "quantite", "type_transaction", "date_creation", "client__nom_complet",
         "promotion_id", "employe__username", "annulation__date_annulation", "annulation__employe__username",
+        "succursale_id", "succursale__nom",
     )
     libelles = dict(TYPES_RAPPORT)
     # Une seule lecture jointe : les événements et leurs traces partagent
@@ -167,10 +189,11 @@ def generer_rapport(*, date_debut, date_fin, types, precision):
                     "Annulation" if annulation else "Transaction", ligne["client__nom_complet"],
                     employe or "Inconnu", 0 if annulation else ligne["quantite"],
                     ligne["quantite"] if annulation else 0, ligne["promotion_id"],
+                    ligne["succursale_id"], ligne["succursale__nom"],
                 ))
     evenements.sort(key=lambda evenement: (evenement.date.timestamp(), evenement.transaction_id, evenement.nature == "Annulation"))
     return Rapport(date_debut, date_fin, precision, tuple(types),
-                   timezone.now().astimezone(FUSEAU_RAPPORT), categories, groupes, evenements)
+                   timezone.now().astimezone(FUSEAU_RAPPORT), categories, groupes, evenements, succursales)
 
 
 def _ajouter_ligne(feuille, valeurs):
@@ -236,6 +259,7 @@ def exporter_excel(rapport):
     for nom, valeur in (
         ("Date de début", rapport.date_debut), ("Date de fin", rapport.date_fin),
         ("Niveau de détail", dict(PRECISIONS)[rapport.precision]),
+        ("Succursales", ", ".join(f"#{succursale.pk} — {succursale.nom}" for succursale in rapport.succursales)),
         ("Types de transactions", ", ".join(dict(TYPES_RAPPORT)[type_cafe] for type_cafe in rapport.types)),
         ("Fuseau horaire", str(FUSEAU_RAPPORT)),
         ("Généré le", rapport.genere_le.replace(tzinfo=None)),
@@ -263,11 +287,12 @@ def exporter_excel(rapport):
     if rapport.precision == "transaction":
         transactions = classeur.create_sheet("Transactions")
         _ajouter_ligne(transactions, ["Date", "Transaction", "Type", "Événement", "Client", "Employé",
-                                      "Enregistrées", "Annulées", "Net", "Promotion"])
+                                      "Enregistrées", "Annulées", "Net", "Promotion", "Succursale"])
         for evenement in rapport.evenements:
             _ajouter_ligne(transactions, [evenement.date.replace(tzinfo=None), evenement.transaction_id,
                                          evenement.type_transaction, evenement.nature, evenement.client,
-                                         evenement.employe, evenement.enregistrees, evenement.annulees, evenement.net, evenement.promotion_id])
+                                         evenement.employe, evenement.enregistrees, evenement.annulees, evenement.net, evenement.promotion_id,
+                                         f"#{evenement.succursale_id} — {evenement.succursale}"])
         _mettre_en_forme(transactions)
     fichier = BytesIO()
     classeur.save(fichier)

@@ -13,9 +13,15 @@
 {% include "en_tete.html" %}
 <main class="cafe-content">
     <h1>Rapports de transactions</h1>
+    {% if aucune_succursale %}<p role="status">Aucune succursale accessible. Demandez au Propriétaire de vérifier vos affectations.</p>{% endif %}
     <form id="form-rapport" class="rapport-form" method="get" action="{% url 'rapports' %}">
         {{ form.non_field_errors }}
         <p>{{ form.precision.label_tag }}{{ form.precision }}{{ form.precision.errors }}</p>
+        <fieldset>
+            <legend>{{ form.succursales.label }}</legend>
+            {{ form.succursales.errors }}
+            {{ form.succursales }}
+        </fieldset>
         <fieldset>
             <legend>Période</legend>
             <div class="rapport-dates">
@@ -31,13 +37,14 @@
             {{ form.types }}
         </fieldset>
         <div class="rapport-actions">
-            <button type="submit">Afficher le rapport</button>
-            <button type="submit" formaction="{% url 'rapport_excel' %}">Télécharger Excel</button>
+            <button type="submit"{% if aucune_succursale %} disabled{% endif %}>Afficher le rapport</button>
+            <button type="submit" formaction="{% url 'rapport_excel' %}"{% if aucune_succursale %} disabled{% endif %}>Télécharger Excel</button>
         </div>
     </form>
     {% if rapport %}
     <section aria-labelledby="titre-synthese">
         <h2 id="titre-synthese">Rapport du {{ rapport.date_debut|date:"d/m/Y" }} au {{ rapport.date_fin|date:"d/m/Y" }}</h2>
+        <p>Succursales incluses : {% for succursale in rapport.succursales %}#{{ succursale.pk }} — {{ succursale.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
         <p>Quantités de cafés. Les annulations sont déduites à leur date d’annulation ; le total net peut être négatif.</p>
         {% include "tableau_rapport.html" %}
         <details class="rapport-totaux-details">
@@ -51,13 +58,14 @@
         <div class="table-scroll">
             <table>
                 <caption>{{ page_evenements.paginator.count }} événement{{ page_evenements.paginator.count|pluralize }} — dates et heures de Toronto</caption>
-                <thead><tr><th scope="col">Date</th><th scope="col">Transaction</th><th scope="col">Type</th><th scope="col">Événement</th><th scope="col">Client</th><th scope="col">Employé</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th><th scope="col">Promotion</th></tr></thead>
+                <thead><tr><th scope="col">Date</th><th scope="col">Transaction</th><th scope="col">Type</th><th scope="col">Événement</th><th scope="col">Client</th><th scope="col">Employé</th><th scope="col">Enregistrées</th><th scope="col">Annulées</th><th scope="col">Net</th><th scope="col">Promotion</th><th scope="col">Succursale</th></tr></thead>
                 <tbody>{% for evenement in page_evenements %}<tr>
                     <td>{{ evenement.date|date:"d/m/Y H:i:s" }}</td><td>#{{ evenement.transaction_id }}</td>
                     <td>{{ evenement.type_transaction }}</td><td>{{ evenement.nature }}</td>
                     <td>{{ evenement.client }}</td><td>{{ evenement.employe }}</td>
                     <td>{{ evenement.enregistrees }}</td><td>{{ evenement.annulees }}</td><td>{{ evenement.net }}</td><td>{% if evenement.promotion_id %}#{{ evenement.promotion_id }}{% else %}—{% endif %}</td>
-                </tr>{% empty %}<tr><td colspan="10">Aucune transaction ni annulation pour cette sélection.</td></tr>{% endfor %}</tbody>
+                    <td>#{{ evenement.succursale_id }} — {{ evenement.succursale }}</td>
+                </tr>{% empty %}<tr><td colspan="11">Aucune transaction ni annulation pour cette sélection.</td></tr>{% endfor %}</tbody>
             </table>
         </div>
         {% if page_evenements.has_other_pages %}

@@ -8,7 +8,7 @@
                 {{ user.get_username }}
                 {% if user.is_superuser %} · Superutilisateur{% elif perms.CafeDolbeau.acces_proprietaire %} · Propriétaire{% elif perms.CafeDolbeau.acces_gerant %} · Gérant{% elif perms.CafeDolbeau.acces_base %} · Barista{% endif %}
             </span>
-            {% if perms.CafeDolbeau.acces_proprietaire %}
+            {% if perms.CafeDolbeau.acces_gerant %}
             <form method="get" action="{% url 'rapports' %}">
                 <button type="submit">Rapports</button>
             </form>
@@ -20,6 +20,7 @@
             {% endif %}
             <form method="post" action="{% url 'deconnexion' %}">
                 {% csrf_token %}
+                {% if request.succursale %}<input type="hidden" name="succursale_id" value="{{ request.succursale.pk }}">{% endif %}
                 <button type="submit">Se déconnecter</button>
             </form>
         </div>

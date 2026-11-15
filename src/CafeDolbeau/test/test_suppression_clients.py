@@ -368,7 +368,7 @@ class SuppressionClientTests(TestCase):
         jour = timezone.localdate()
 
         def rapport():
-            return generer_rapport(date_debut=jour, date_fin=jour, types=tuple(TransactionCafe.Type.values), precision="transaction")
+            return generer_rapport(employe=self.gerant, succursale_ids=[1], date_debut=jour, date_fin=jour, types=tuple(TransactionCafe.Type.values), precision="transaction")
 
         avant = rapport()
         supprimer_clients([self.personne.pk], employe=self.gerant)

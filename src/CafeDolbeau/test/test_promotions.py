@@ -369,7 +369,7 @@ class PromotionsTests(TestCase):
     def test_rapport_et_excel_conservent_numero_apres_expiration_et_annulation(self):
         lignes = self.operation(3)
         annuler_operation(lignes[0].pk, self.proprietaire)
-        rapport = generer_rapport(date_debut=self.jour, date_fin=self.jour,
+        rapport = generer_rapport(employe=self.proprietaire, succursale_ids=[1], date_debut=self.jour, date_fin=self.jour,
                                  types=("achat", "gratuit"), precision="transaction")
         self.assertEqual(len(rapport.evenements), 4)
         self.assertEqual({e.promotion_id for e in rapport.evenements}, {self.promotion.pk})

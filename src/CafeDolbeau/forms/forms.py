@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
 
 from ..models import AffectationEmployeSuccursale, Client, Employe, ParametresCafe, Succursale
-from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, employes_administrables, est_proprietaire, succursales_autorisees
+from ..permissions import PERMISSION_BASE, PERMISSION_GERANT, SESSION_SUCCURSALE, employes_administrables, est_proprietaire, succursales_autorisees
 
 
 class ConnexionForm(AuthenticationForm):
@@ -15,6 +15,16 @@ class ConnexionForm(AuthenticationForm):
                 "Aucun rôle n’est attribué à votre compte. Contactez l’administrateur.",
                 code="role_manquant",
             )
+        succursale_id = self.request.session.get(SESSION_SUCCURSALE) if self.request else None
+        if succursale_id is not None:
+            succursale = Succursale.objects.filter(pk=succursale_id).first()
+            if succursale is None:
+                raise forms.ValidationError("La succursale de cette caisse n’existe plus.", code="succursale_absente")
+            if not succursales_autorisees(user).filter(pk=succursale_id).exists():
+                raise forms.ValidationError(
+                    "Vous n’avez pas accès à la succursale « %(succursale)s » de cette caisse.",
+                    code="succursale_interdite", params={"succursale": succursale.nom},
+                )
 
 
 class RoleEmployeForm(forms.ModelForm):

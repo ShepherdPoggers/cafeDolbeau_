@@ -144,8 +144,8 @@ class PerimetresTransactionsTests(TestCase):
             preparer_annulation(locale, self.gerant, {locale.pk: (1, 0, 0), distante.pk: (1, 0, 0)})
         self.assertFalse(AnnulationTransaction.objects.exists())
 
-    def test_rapports_et_exports_reserves_provisoirement_au_proprietaire(self):
-        for acteur, statut in ((self.proprietaire, 200), (self.gerant, 403), (self.barista, 403)):
+    def test_rapports_et_exports_autorises_aux_gerants_et_proprietaires(self):
+        for acteur, statut in ((self.proprietaire, 200), (self.gerant, 200), (self.barista, 403)):
             self.client.force_login(acteur)
             for nom in ("rapports", "rapport_excel"):
                 with self.subTest(acteur=acteur, nom=nom):
