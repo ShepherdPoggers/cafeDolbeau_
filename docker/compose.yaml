@@ -1,6 +1,10 @@
+# Conserver le nom du projet existant et ses volumes après le déplacement.
+name: cafedolbeau_
+
 x-app-environment: &app-environment
   DJANGO_SETTINGS_MODULE: config.settings
-  SECRET_KEY: ${SECRET_KEY:?Exécutez python scripts/configurer_env.py}
+  SECRET_KEY: ${SECRET_KEY:-}
+  SECRET_KEY_FILE: /app/secrets/SECRET_KEY
   DJANGO_DEBUG: "false"
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
   DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
@@ -14,37 +18,68 @@ x-app-environment: &app-environment
   CAFE_DB_ENGINE: postgresql
   POSTGRES_DB: ${POSTGRES_DB:-cafe_dolbeau}
   POSTGRES_USER: ${POSTGRES_USER:-cafe_dolbeau}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+  POSTGRES_PASSWORD_FILE: /app/secrets/POSTGRES_PASSWORD
   POSTGRES_HOST: db
   POSTGRES_PORT: "5432"
 
 services:
+  secrets:
+    image: cafe-dolbeau-secrets:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    command: ["python", "docker/preparer_secrets.py"]
+    volumes:
+      - runtime_secrets:/app/secrets
+    restart: "no"
+
   db:
     image: postgres:17.9-bookworm
     user: postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cafe_dolbeau}
       POSTGRES_USER: ${POSTGRES_USER:-cafe_dolbeau}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
+      POSTGRES_PASSWORD_FILE: /app/secrets/POSTGRES_PASSWORD
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - type: volume
+        source: runtime_secrets
+        target: /app/secrets
+        read_only: true
+        volume:
+          nocopy: true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 10s
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   init:
     image: cafe-dolbeau-init:local
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: production
     environment: *app-environment
     command: ["sh", "-ec", "python src/manage.py migrate --noinput && python src/manage.py collectstatic --noinput"]
     volumes:
       - staticfiles:/app/staticfiles
+      - type: volume
+        source: runtime_secrets
+        target: /app/secrets
+        read_only: true
+        volume:
+          nocopy: true
     depends_on:
       db:
         condition: service_healthy
@@ -53,7 +88,8 @@ services:
   app:
     image: cafe-dolbeau-app:local
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: production
     environment:
       <<: *app-environment
@@ -64,6 +100,13 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
+    volumes:
+      - type: volume
+        source: runtime_secrets
+        target: /app/secrets
+        read_only: true
+        volume:
+          nocopy: true
     healthcheck:
       test: ["CMD", "python", "docker/healthcheck.py"]
       interval: 10s
@@ -75,7 +118,7 @@ services:
   proxy:
     image: cafe-dolbeau-proxy:local
     build:
-      context: .
+      context: ..
       dockerfile: docker/proxy.Dockerfile
     environment:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
@@ -103,9 +146,18 @@ services:
     environment:
       POSTGRES_DB: cafe_tests
       POSTGRES_USER: cafe_tests
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Exécutez python scripts/configurer_env.py}
+      POSTGRES_PASSWORD_FILE: /app/secrets/POSTGRES_PASSWORD
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
+      - type: volume
+        source: runtime_secrets
+        target: /app/secrets
+        read_only: true
+        volume:
+          nocopy: true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 3s
@@ -117,18 +169,27 @@ services:
     profiles: ["test"]
     image: cafe-dolbeau-tests:local
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
       target: tests
     environment:
       <<: *app-environment
       POSTGRES_DB: cafe_tests
       POSTGRES_USER: cafe_tests
       POSTGRES_HOST: db-test
+    volumes:
+      - type: volume
+        source: runtime_secrets
+        target: /app/secrets
+        read_only: true
+        volume:
+          nocopy: true
     depends_on:
       db-test:
         condition: service_healthy
 
 volumes:
+  runtime_secrets:
   postgres_data:
   staticfiles:
   postgres_test_data:

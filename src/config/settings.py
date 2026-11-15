@@ -34,7 +34,14 @@ def env_liste(nom, defaut=""):
     return [valeur.strip() for valeur in os.environ.get(nom, defaut).split(",") if valeur.strip()]
 
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "")
+def env_secret(nom):
+    valeur = os.environ.get(nom, "")
+    if not valeur and os.environ.get(nom + "_FILE"):
+        valeur = Path(os.environ[nom + "_FILE"]).read_text().strip()
+    return valeur
+
+
+SECRET_KEY = env_secret("SECRET_KEY")
 if not SECRET_KEY:
     raise ImproperlyConfigured("SECRET_KEY est requis. Exécutez python scripts/configurer_env.py.")
 DEBUG = env_bool("DJANGO_DEBUG", False)
@@ -108,7 +115,7 @@ CAFE_DB_ENGINE = os.environ.get('CAFE_DB_ENGINE', 'postgresql')
 
 if CAFE_DB_ENGINE == 'postgresql':
     def database_env(name):
-        value = os.environ.get(name)
+        value = env_secret(name)
         if not value:
             raise ImproperlyConfigured(
                 f'{name} est requis. Copiez .env.example vers .env et renseignez la connexion PostgreSQL.'

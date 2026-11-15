@@ -1,4 +1,4 @@
-# Utilisation explicite : docker compose -f compose.yaml -f compose.dev.yaml up -d db
+# Utilisation explicite : docker compose --env-file .env -f docker/compose.yaml -f docker/compose.dev.yaml up -d db
 # Le port PostgreSQL n’est publié que pour le développement local.
 services:
   db:

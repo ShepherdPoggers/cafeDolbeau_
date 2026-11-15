@@ -14,9 +14,9 @@ RUN python -c "import shutil; shutil.copytree('/source/src', '/runtime/src', ign
 
 FROM base AS runtime
 COPY --from=code --chown=cafe:cafe /runtime/src/ ./src/
-COPY --chown=cafe:cafe scripts/migrer_sqlite_vers_postgres.py ./scripts/
-COPY --chown=cafe:cafe docker/gunicorn.conf.py docker/healthcheck.py ./docker/
-RUN mkdir /app/staticfiles && chown cafe:cafe /app/staticfiles
+COPY --chown=cafe:cafe scripts/migrer_sqlite_vers_postgres.py scripts/donnees_v3.py ./scripts/
+COPY --chown=cafe:cafe docker/gunicorn.conf.py docker/healthcheck.py docker/preparer_secrets.py ./docker/
+RUN mkdir /app/staticfiles /app/secrets && chown cafe:cafe /app/staticfiles /app/secrets
 USER cafe
 EXPOSE 8000
 CMD ["gunicorn", "--config", "docker/gunicorn.conf.py", "config.wsgi:application"]

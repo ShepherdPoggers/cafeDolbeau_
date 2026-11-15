@@ -1,45 +1,50 @@
 # Déployer la V3 avec Docker Compose
 
-La configuration par défaut est celle de production : nginx devant Gunicorn,
-PostgreSQL sur le réseau interne, `DEBUG=False`, processus applicatifs non-root.
-Seul nginx publie `http://localhost:8000`. Les données PostgreSQL sont dans un
-volume nommé ; `docker compose down` les conserve.
-
 ## Installation neuve
 
 Prérequis : Docker et Docker Compose avec Buildx (inclus dans Docker Desktop).
 Ouvrir un terminal à la racine du dépôt.
 
+Les fichiers Compose, Dockerfile, exclusions de construction, configurations
+nginx et Gunicorn et scripts de conteneurs sont regroupés dans `docker/`.
+Le fichier `.env` reste à la racine, car il configure aussi les commandes Django
+locales. Sa variable `COMPOSE_FILE=docker/compose.yaml` permet d’utiliser
+simplement `docker compose` depuis la racine, conformément à la commande de correction.
+Ce mécanisme est décrit dans la [documentation Compose](https://docs.docker.com/compose/how-tos/environment-variables/envvars/#compose_file).
+
+Le nom de projet par défaut reste `cafedolbeau_` pour réutiliser les volumes
+existants après ce déplacement. Si votre installation utilisait un autre nom de
+projet, conserver ce nom avec `-p` ou `COMPOSE_PROJECT_NAME`.
+
 ```bash
 cp .env.example .env
-python scripts/configurer_env.py
 docker compose up --build
 ```
 
-Sous Windows PowerShell, utiliser `Copy-Item .env.example .env`, puis
-`py scripts/configurer_env.py` si `python` n’est pas disponible.
+Sous Windows PowerShell, utiliser `Copy-Item .env.example .env`.
+Aucune installation locale de Python ni préparation de clé n’est nécessaire.
 
-Le script génère `SECRET_KEY` et `POSTGRES_PASSWORD` uniquement s’ils sont vides,
-sans les afficher. Il ne change pas les secrets existants et restreint les droits
-du fichier `.env`. Ne pas écraser un `.env` existant avec `cp` : compléter plutôt
-ses variables à partir de `.env.example` et lancer le script. Ne pas commettre ce
-fichier. Une modification du mot de passe dans `.env` ne modifie pas celui d’une
-base PostgreSQL déjà initialisée.
+Le service ponctuel `secrets` génère aléatoirement `SECRET_KEY` et
+`POSTGRES_PASSWORD` lorsqu’ils sont vides. Les valeurs sont conservées dans le
+volume nommé `runtime_secrets`, réutilisées aux démarrages suivants et ne sont
+jamais affichées dans les journaux. PostgreSQL et Django y accèdent en lecture
+seule par les variables `SECRET_KEY_FILE` et `POSTGRES_PASSWORD_FILE`.
+Ce volume doit être conservé et sauvegardé avec celui de PostgreSQL.
+Il n’est monté ni dans nginx ni sur l’ordinateur hôte.
 
-Si Python n’est pas installé sur l’ordinateur, générer la configuration avec
-l’image Python versionnée, après la copie de `.env.example` :
+Les valeurs explicitement définies dans `.env` sont prioritaires. Pour une
+installation existante, conserver le `.env` et ses secrets ; ajouter
+`COMPOSE_FILE=docker/compose.yaml` si nécessaire. Ne pas remplacer ce fichier par
+l’exemple sur une base existante : le mot de passe doit correspondre à celui de
+PostgreSQL. Une modification dans `.env` ne change pas le mot de passe enregistré
+dans PostgreSQL.
 
-```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace python:3.12.13-slim-bookworm python scripts/configurer_env.py
-```
+Le script `python scripts/configurer_env.py` reste facultatif pour préparer les
+secrets dans `.env` avant la première initialisation, notamment pour exécuter
+Django localement en développement. Il ne change pas les valeurs déjà renseignées.
+Après une génération automatique en volume, ne pas générer un autre mot de passe
+dans `.env` : conserver les secrets déjà utilisés par cette installation.
 
-Sous PowerShell :
-
-```powershell
-docker run --rm -v "${PWD}:/workspace" -w /workspace python:3.12.13-slim-bookworm python scripts/configurer_env.py
-```
-
-Après cette préparation des secrets, **`docker compose up --build` démarre tout**.
 Ouvrir <http://localhost:8000>. Aucun compte avec un mot de passe prédéfini n’est
 créé. Pour une base neuve, ouvrir un second terminal et créer le premier compte :
 
@@ -50,9 +55,22 @@ docker compose exec app python src/manage.py createsuperuser
 L’administration se trouve sur <http://localhost:8000/admin/>. Un superutilisateur
 peut attribuer le premier rôle applicatif Propriétaire.
 
+Pour tester les rôles et les succursales avec des données de démonstration V3 :
+
+```bash
+docker compose run --build --rm app python scripts/donnees_v3.py
+```
+
+Ce chargement est facultatif et manuel. Le mot de passe des comptes de
+démonstration et les adresses des caisses sont affichés à la fin. Le script
+conserve les données existantes et refuse une seconde exécution avec les mêmes
+identifiants. Les comptes et les scénarios sont détaillés dans le
+[README](../README.md#données-de-démonstration-v3).
+
 ## Démarrage et migrations
 
-Compose attend le healthcheck PostgreSQL, puis lance le service ponctuel `init` :
+Compose initialise les secrets, attend le healthcheck PostgreSQL, puis lance
+le service ponctuel `init` :
 
 1. `python src/manage.py migrate --noinput` ;
 2. `python src/manage.py collectstatic --noinput`.
@@ -61,6 +79,8 @@ Gunicorn ne démarre qu’après leur réussite. nginx attend ensuite que l’ap
 soit saine. Le service `init` doit apparaître terminé avec le code `0`, les trois
 services permanents doivent être `healthy`. Une migration en échec bloque le
 démarrage applicatif et son erreur apparaît dans les journaux.
+
+Le service `secrets` se termine aussi avec le code `0`.
 
 Les migrations sont appliquées automatiquement lors du démarrage de la pile.
 Pour une mise à jour avec des utilisateurs actifs, arrêter d’abord l’application,
@@ -79,6 +99,45 @@ docker compose run --rm --no-deps app python src/manage.py migrate --noinput
 ```
 
 Cette commande suppose que PostgreSQL est déjà démarré et prêt.
+
+## Erreur « password authentication failed » sur une base existante
+
+PostgreSQL enregistre son mot de passe lors de la première initialisation du
+volume. Copier de nouveau `.env.example` sur `.env` efface les secrets configurés
+et peut provoquer la génération d’un mot de passe différent. Le service
+`secrets` ne change pas le mot de passe enregistré dans PostgreSQL.
+
+Si l’ancien mot de passe est connu, le remettre dans `POSTGRES_PASSWORD` du
+`.env`, puis relancer `docker compose up --build`.
+
+S’il est perdu, l’administrateur local peut aligner le compte PostgreSQL sur le
+secret du volume actuel. Cette opération change uniquement le mot de passe du
+compte utilisé, sans supprimer de données. Depuis la racine, ouvrir PostgreSQL :
+
+```bash
+docker compose exec db sh -c 'exec psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --no-psqlrc'
+```
+
+Puis exécuter dans `psql` :
+
+```sql
+DO $$
+DECLARE
+    mot_de_passe text := pg_read_file('/app/secrets/POSTGRES_PASSWORD');
+BEGIN
+    IF length(mot_de_passe) < 1 THEN
+        RAISE EXCEPTION 'Le secret PostgreSQL est vide';
+    END IF;
+    EXECUTE format('ALTER ROLE %I PASSWORD %L', current_user, mot_de_passe);
+END
+$$;
+\q
+```
+
+Cette commande utilise l’accès local du compte administrateur de l’image
+PostgreSQL fournie, sans afficher le secret. Relancer ensuite
+`docker compose up --build`. Conserver les fichiers `.env` et les volumes de
+cette installation lors des démarrages suivants.
 
 ## Configuration et changement de domaine
 
@@ -170,11 +229,16 @@ les migrations, conserve le SQLite original et refuse tout écrasement de donné
 
 ## Développement local séparé
 
-Le fichier `compose.dev.yaml` n’est jamais chargé implicitement. Il permet de
+Le fichier `docker/compose.dev.yaml` n’est jamais chargé implicitement. Il permet de
 publier PostgreSQL uniquement pour Python exécuté sur l’ordinateur :
 
+Pour une nouvelle installation de développement, exécuter d’abord
+`python scripts/configurer_env.py` afin que le processus Python local et les
+conteneurs partagent les secrets renseignés dans `.env`. Si la base existe déjà,
+utiliser ses secrets actuels ; ne pas en générer d’autres.
+
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up -d db
+docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up -d db
 ```
 
 Avec l’environnement virtuel activé et les dépendances installées :
@@ -206,8 +270,11 @@ Les pages de connexion, les styles de l’administration et les fichiers statiqu
 répondent correctement ; une URL absente retourne une 404 sans débogage et un
 hôte non autorisé est refusé.
 
-La commande de tests conteneurisés a réussi : **325 tests Django sur PostgreSQL**
-et **11 tests JavaScript**. La persistance après `down` puis `up` et le changement
+La commande de tests conteneurisés a réussi : **327 tests Django sur PostgreSQL**
+et **11 tests JavaScript**. Le parcours `cp .env.example .env` puis
+`docker compose up --build` a été vérifié sur une copie neuve, sans génération
+manuelle de secrets. Les secrets générés restent identiques après redémarrage.
+La persistance après `down` puis `up` et le changement
 de domaine uniquement par environnement ont été vérifiés, y compris la connexion,
 le contrôle CSRF, l’administration et la déconnexion. La coupure de PostgreSQL
 produit une santé `503` ; son redémarrage rétablit une santé `200`.

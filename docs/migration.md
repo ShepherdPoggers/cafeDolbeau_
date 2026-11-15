@@ -137,7 +137,7 @@ applique les migrations nécessaires et transfère les données. Il n’est pas
 nécessaire de migrer manuellement le fichier SQLite avant l’importation.
 
 Toutes les commandes ci-dessous s’exécutent **à la racine du dépôt**, dans le
-dossier contenant `src/`, `scripts/`, `compose.yaml` et `requirements.txt`.
+dossier contenant `src/`, `scripts/`, `docker/compose.yaml` et `requirements.txt`.
 
 ## 1. Arrêter la V2 et sauvegarder les données
 
@@ -171,14 +171,13 @@ Pour une nouvelle configuration :
 
 ```bash
 cp .env.example .env
-python scripts/configurer_env.py
 ```
 
-Sous PowerShell, utiliser `Copy-Item .env.example .env`, puis
-`py scripts/configurer_env.py` si nécessaire. Si `.env` existe déjà, le conserver,
-compléter les variables manquantes à partir de `.env.example`, puis lancer le
-script. Celui-ci génère uniquement les secrets vides, sans afficher leurs valeurs.
-Une alternative sans Python local est documentée dans le
+Sous PowerShell, utiliser `Copy-Item .env.example .env`. Si `.env` existe déjà,
+le conserver et compléter les variables manquantes, dont
+`COMPOSE_FILE=docker/compose.yaml`, à partir de `.env.example`. Les secrets vides
+sont générés automatiquement dans un volume persistant au démarrage de Compose,
+comme décrit dans le
 [guide de déploiement](deploiement.md#installation-neuve).
 
 ## 3. Configurer la destination PostgreSQL
@@ -196,7 +195,9 @@ DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 ```
 
-`SECRET_KEY` et `POSTGRES_PASSWORD` sont renseignés par le script de préparation.
+`SECRET_KEY` et `POSTGRES_PASSWORD` peuvent rester vides pour une installation
+neuve : Compose les génère dans le volume `runtime_secrets`. Pour une base
+existante, conserver les valeurs déjà configurées.
 La destination doit être vide ou contenir uniquement les valeurs initiales des
 migrations. Ne pas y créer de compte ni y charger de données avant l’import.
 

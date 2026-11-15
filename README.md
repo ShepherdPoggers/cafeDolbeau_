@@ -29,14 +29,23 @@ Les dépendances sont fixées dans `requirements.txt`, notamment Django 5.2.17. 
 
 ```bash
 cp .env.example .env
-python scripts/configurer_env.py
 docker compose up --build
 ```
 
 Sur une installation existante, conserver `.env` et compléter ses variables plutôt
-que de l’écraser. Le script génère les secrets manquants sans changer les valeurs
-existantes. L’application est accessible sur **http://localhost:8000** via nginx
+que de l’écraser. Ajouter `COMPOSE_FILE=docker/compose.yaml` si cette variable
+est absente. Les secrets vides sont générés automatiquement au démarrage et
+conservés dans un volume dédié ; les valeurs renseignées dans `.env` sont prioritaires. L’application est accessible sur **http://localhost:8000** via nginx
 et Gunicorn, avec `DEBUG=False` et PostgreSQL interne persistant.
+
+Pour arrêter les conteneurs, depuis la racine du projet :
+
+```bash
+docker compose down
+```
+
+Les données PostgreSQL sont conservées dans les volumes. Ne pas ajouter `-v` :
+cette option supprime les volumes et leurs données.
 
 La [procédure de déploiement](docs/deploiement.md) précise les commandes Windows,
 les migrations automatiques, la création du premier compte, l’import SQLite V2,
@@ -48,6 +57,48 @@ Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
 ```bash
 docker compose --profile test run --build --rm tests
 ```
+
+## Données de démonstration V3
+
+Après le démarrage de la V3 et l’application des migrations, charger les données
+avec le script dédié (l’image est reconstruite pour inclure le script) :
+
+```bash
+docker compose run --build --rm app python scripts/donnees_v3.py
+```
+
+Le script utilise PostgreSQL configuré dans Compose. Il ajoute trois succursales
+`[Démo V3] Centre`, `Nord` et `Sud`, six clients et les comptes suivants :
+
+| Compte | Rôle | Succursales accessibles |
+| --- | --- | --- |
+| `demo_proprietaire` | Propriétaire | Tout le réseau, sans affectation requise |
+| `demo_gerant_centre_nord` | Gérant | Centre et Nord |
+| `demo_gerant_sud` | Gérant | Sud |
+| `demo_barista_centre` | Barista | Centre |
+| `demo_barista_nord` | Barista | Nord |
+| `demo_barista_sud` | Barista | Sud |
+| `demo_barista_mobile` | Barista | Centre et Sud |
+| `demo_inactif` | Barista désactivé | Centre, connexion refusée |
+
+Un mot de passe aléatoire commun est affiché à la fin, avec les adresses des
+caisses et les numéros des promotions. Pour choisir ce mot de passe, ajouter
+`--password 'VotreMotDePasseDeDemo!'`. Aucun superutilisateur technique n’est créé.
+
+Les scénarios comprennent des achats dans les trois succursales, l’historique
+partagé d’un client avec plus de dix opérations, des cartes prépayées et leur
+consommation, une opération annulée, une promotion active partagée par Centre et
+Nord, une promotion annulée au Sud et une future promotion d’une journée.
+Des transactions des derniers jours permettent aussi de tester les rapports.
+
+Le chargement est atomique, conserve les données existantes et ne change pas la
+succursale nº 1 ni les paramètres de fidélité. Si un identifiant de démonstration
+existe déjà, le script refuse de charger une seconde fois les données.
+Il ne s’exécute jamais automatiquement au démarrage.
+
+Pour une exécution locale avec un environnement Python et la connexion PostgreSQL
+déjà configurés : `python scripts/donnees_v3.py`. La commande Django équivalente
+est `python src/manage.py donnees_v3`.
 
 
 ## Démarrer une V2 neuve avec les données de test

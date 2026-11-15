@@ -1,0 +1,7 @@
+*
+!docker/
+docker/*
+!docker/nginx.conf
+!docker/proxy-entrypoint.sh
+!docker/proxy.Dockerfile
+!docker/proxy.Dockerfile.dockerignore
