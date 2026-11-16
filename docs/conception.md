@@ -6,6 +6,7 @@
   - [Table des matières](#table-des-matières)
   - [Implémentation](#implémentation)
     - [Structure du projet](#structure-du-projet)
+    - [Déploiement avec nginx](#déploiement-avec-nginx)
     - [Clients](#clients)
       - [Suppression d'un client](#suppression-dun-client)
       - [Fusion de deux clients](#fusion-de-deux-clients)
@@ -28,7 +29,8 @@
     - [Choix techniques](#choix-techniques)
       - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
       - [Cohérence des données](#cohérence-des-données)
-      - [Migration des données](#migration-des-données)
+      - [Migration des données (V1 -\> V2)](#migration-des-données-v1---v2)
+      - [Migration des données (V2 -\> V3)](#migration-des-données-v2---v3)
 
 ## Implémentation
 
@@ -69,19 +71,73 @@
 ```
 
 
+### Déploiement avec nginx
+
+Le déploiement de production est défini dans [docker/compose.yaml](../docker/compose.yaml).
+Les conteneurs communiquent sur le réseau `default` créé par Compose. Seul le
+proxy nginx publie un port sur l’ordinateur : par défaut, `127.0.0.1:8000`
+redirige vers son port `8080`.
+
+```mermaid
+flowchart LR
+    navigateur["Navigateur<br/>http://localhost:8000"]
+
+    subgraph reseau["Réseau Compose : default"]
+        proxy["proxy : nginx<br/>port 8080"]
+        app["app : Gunicorn / Django<br/>port 8000"]
+        db["db : PostgreSQL<br/>port 5432"]
+        init["init : service ponctuel<br/>migrate puis collectstatic"]
+        secrets["secrets : service ponctuel<br/>préparation des secrets"]
+
+        proxy -->|"HTTP : app:8000"| app
+        app -->|"SQL : db:5432"| db
+        init -->|"Migrations"| db
+    end
+
+    subgraph volumes["Volumes nommés persistants"]
+        postgres_data[("postgres_data")]
+        staticfiles[("staticfiles")]
+        runtime_secrets[("runtime_secrets")]
+    end
+
+    navigateur -->|"HTTP : 127.0.0.1:8000 → proxy:8080"| proxy
+    db -->|"Lecture et écriture des données"| postgres_data
+    init -->|"Écriture : collectstatic"| staticfiles
+    proxy -->|"Lecture seule : /static/"| staticfiles
+    secrets -->|"Écriture"| runtime_secrets
+    app -.->|"Lecture seule"| runtime_secrets
+    db -.->|"Lecture seule"| runtime_secrets
+    init -.->|"Lecture seule"| runtime_secrets
+```
+
+Une requête vers une page de l’application passe du navigateur à nginx, puis à
+Gunicorn, qui exécute Django. Django consulte PostgreSQL au besoin et la réponse
+revient par nginx. Les requêtes vers `/static/` sont servies directement par
+nginx depuis le volume `staticfiles`, notamment les feuilles de style de
+l’administration. Les ports de l’application et de PostgreSQL restent accessibles
+uniquement sur le réseau des conteneurs.
+
+Au démarrage, `secrets` prépare les secrets, puis PostgreSQL démarre. Le service
+`init` attend que PostgreSQL soit sain avant d’appliquer les migrations et de
+collecter les fichiers statiques. Gunicorn attend la réussite de `init`, puis
+nginx attend que l’application soit saine. Les volumes conservent les données,
+les fichiers statiques et les secrets après `docker compose down` puis `up`.
+
 ### Clients
 
 
 Un client est constitué des éléments suivants :
 
-- un ID (clé primaire)
-- un nom complet
-- un numéro de téléphone (UNIQUE)
-- un courriel (UNIQUE)
-- le nombre de cafés prépayés qu'il possède
-- le nombre total de cafés achetés
-- le nombre total de cafés gratuits
-- est_actif
+- **id** : La clé primaire du client.
+- **nom_complet** : Le nom complet du client.
+- **telephone** : Le numéro de téléphone du client (UNIQUE).
+- **courriel** : Le courriel du client (UNIQUE).
+- **nombre_cafes_prepayes** : Le nombre de cafés prépayés qu'il possède.
+- **nombre_cafes_achetes** : Le nombre total de cafés achetés.
+- **nombre_cafes_fidelite** : Le nombre d’achats admissibles à la fidélité habituelle, hors promotion.
+- **nombre_cafes_gratuits** : Le nombre de cafés gratuits disponibles.
+- **compteurs_promotion** : La relation vers les compteurs de cafés gratuits par promotion.
+- **est_actif** : Indique si le client est actif.
 
 Lors de l'inscription, le client doit donner son courriel ou son numéro de téléphone. Il est aussi possible de donner les deux.
 Cette vérification est faite à l'aide de la redéfinition de la fonction `clean` de la classe `Model`.
@@ -121,16 +177,19 @@ Le retour en arrière est possible tant qu'aucune transaction n'est effectuée s
 Lorsqu'un client achète un café, le modèle `TransactionCafe` est utilisé.
 Ce modèle contient les attributs suivants :
 
-- `type_transaction` -> Permet de savoir si la transaction est un achat, un café prépayé, un café gratuit ou l'utilisation d'un café prépayé ou gratuit.
-- `client` -> ID du client.
-- `client_origine_id` -> Si un client est supprimé, cet attribut permet de le différencier des autres.
-- `quantite` -> Nombre de cafés.
-- `date_creation` -> Date de la transaction.
-- `employe` -> Employé ayant enregistré la transaction.
-- `operation_id` -> UUID commun aux lignes d’une même opération, permettant de les regrouper pour une annulation.
-- `variation_achetes` -> Variation du compteur de cafés achetés causée par cette ligne.
-- `variation_prepayes` -> Variation du compteur de cafés prépayés causée par cette ligne.
-- `variation_gratuits` -> Variation du compteur de cafés gratuits causée par cette ligne.
+- **type_transaction** : Permet de savoir si la transaction est un achat, un café prépayé, un café gratuit ou l'utilisation d'un café prépayé ou gratuit.
+- **client** : ID du client.
+- **client_origine_id** : Si un client est supprimé, cet attribut permet de le différencier des autres.
+- **quantite** : Nombre de cafés.
+- **date_creation** : Date de la transaction.
+- **employe** : Employé ayant enregistré la transaction.
+- **operation_id** : UUID commun aux lignes d’une même opération, permettant de les regrouper pour une annulation.
+- **variation_achetes** : Variation du compteur de cafés achetés causée par cette ligne.
+- **variation_prepayes** : Variation du compteur de cafés prépayés causée par cette ligne.
+- **variation_gratuits** : Variation du compteur de cafés gratuits causée par cette ligne.
+- **succursale** : L'id de la succursale dans laquelle la transaction a été effectué
+- **promotion** : L'id de la promotion si il y a lieu, sinon null
+
 
 Les variations mémorisent les effets de chaque ligne pour pouvoir les inverser lors d’une annulation. Une valeur positive ajoute des cafés, une valeur négative en retire et zéro laisse le compteur inchangé. Pour les anciennes transactions, ces champs peuvent être à `NULL` : leurs effets doivent alors être renseignés par un gérant avant l’annulation.
 
@@ -146,18 +205,26 @@ Le champ `type_transaction` permet de savoir quoi faire selon le type de transac
 
 ##### Calcul des cafés gratuits
 
-Pour calculer le nombre de cafés gratuits accordés au client, l'opération suivante est utilisée :
+Hors promotion, le nombre de cafés gratuits accordés au client est calculé à partir du compteur de fidélité habituelle :
 
 - **gratuit** : Nombre de cafés gratuits accordés lors de la transaction ;
-- **total** : Nombre de cafés achetés par le client avant la transaction ;
-- **achat** : Nombre de cafés achetés par le client lors de la transaction, excluant les cafés prépayés ;
-- **regle** : Nombre de cafés nécessaires avant d'obtenir un café gratuit.
+- **total** : Valeur de `nombre_cafes_fidelite` avant la transaction ;
+- **achat** : Nombre de nouveaux achats admissibles à la fidélité habituelle, excluant les cafés consommés à partir des réserves gratuites ou prépayées ;
+- **regle** : Seuil de fidélité habituelle en vigueur, donné par `seuil_gratuite_actif`.
 
 ```math
 gratuit = (total + achat)\;\mathrm{DIV}\;regle - total\;\mathrm{DIV}\;regle
 ```
 
-Ce calcul se fait à l'aide d'une méthode du modèle [ParametresCafe](#paramètres-des-cafés-gratuits).
+Ce calcul se fait à l'aide de la méthode `calculer_cafes_gratuits` du modèle
+[ParametresCafe](#paramètres-des-cafés-gratuits). Les étampes habituelles restantes
+correspondent à `nombre_cafes_fidelite % seuil_gratuite_actif`.
+
+Le compteur `nombre_cafes_achetes` conserve tous les achats, y compris ceux
+effectués pendant une promotion. Pendant une promotion, ces achats font avancer
+le compteur promotionnel et la fidélité habituelle reste inchangée. Par exemple,
+un client ayant 9 achats admissibles qui achète 4 cafés en promotion passe à
+13 achats au total, mais conserve 9 étampes habituelles pour un seuil de 10.
 
 
 ##### Explication de la logique
@@ -172,7 +239,7 @@ C'est toujours le cas dans la V2. Si la règle des cafés gratuits n'est pas ég
 
 | Situation                             | Résultat attendu pour regle = 10                   |
 | ------------------------------------- | -------------------------------------------------- |
-| 9 cafés achetés, puis achat de 1 café | Total acheté : 10 ; ajout de 1 récompense          |
+| 9 achats admissibles, puis achat de 1 café hors promotion | Compteur de fidélité : 10 ; ajout de 1 récompense |
 | Utilisation de cette récompense       | Solde gratuit diminué de 1 ; total acheté inchangé |
 | Achat de 2 cartes                     | +20 achetés, +20 prépayés, +2 gratuits             |
 
@@ -199,10 +266,10 @@ Une annulation se déroule ainsi :
 
 Pour simplifier la gestion des paramètres des cafés gratuits, une section complète a été ajoutée dans l'administration. Cette section découle du modèle `ParametreCafe`. Ce modèle a les attributs suivants :
 
-- `id` -> identifiant numérique
-- `cafes_pour_gratuite` -> Le nombre de cafés pour en avoir un gratuit (*quantite*)
-- `cafes_pour_gratuite_precedent` -> Le nombre précédent de cafés pour en avoir un gratuit
-- `date_application` -> La date à laquelle on utilise `cafes_pour_gratuite` au lieu de `cafes_pour_gratuite_precedent`
+- **id** : Identifiant numérique.
+- **cafes_pour_gratuite** : Le nombre de cafés pour en avoir un gratuit (*quantite*).
+- **cafes_pour_gratuite_precedent** : Le nombre précédent de cafés pour en avoir un gratuit.
+- **date_application** : La date à laquelle on utilise `cafes_pour_gratuite` au lieu de `cafes_pour_gratuite_precedent`.
 
 Il a les méthodes suivantes :
 
@@ -260,6 +327,9 @@ Propriétaire est désigné par un superutilisateur.
 
 La gestion des succursales se fait à l'aide des modèles `Succursale` et `AffectationEmployeSuccursale`.
 
+Le choix d’identifier la succursale dans l’URL de la caisse est justifié dans
+l’[ADR-0009 — Comment différencier deux succursales](adr/0009-SUCCURSALE.md). Se choix prend en compte que les employés ont accès au raccourcis de la caisse qui redirige vers le site web. Ils n'ont pas accès à l'URL. Dans un cas réel, on aurait planifié l'utilisation d'un VPN pour éviter que n'importe qui puisse accéder à l'application et on baserait la succursale selon l'ip de la caisse.
+
 Une succursale est constituée des attributs suivants :
 
 - **id** : La clé primaire de la succursale.
@@ -312,13 +382,16 @@ Cette relation est, entre autres, utile pour empêcher un gérant de consulter o
 
 #### Programme de fidélité
 
-Le programme de fidélité reste semblable à celui des versions précédentes, à l'exception de l'ajout d'une nouvelle catégorie : les **promotions**. Les promotions s'ajoutent au programme standard. Elles sont attribuées directement aux succursales participantes. Les promotions fonctionnent à l'aide des trois modèles suivants : `Promotions`, `PromotionSuccursale` et `CompteurPromotion`.
+La gestion des promotions et de leurs compteurs partagés entre les succursales
+participantes est justifiée dans l’[ADR-0011 — Gestion de la fidélité avec plusieurs succursales](adr/0011-PROMOTIONS.md).
 
-Le modèle `Promotions` est constitué des attributs suivants :
+Le programme de fidélité reste semblable à celui des versions précédentes, à l'exception de l'ajout d'une nouvelle catégorie : les **promotions**. Les promotions remplace le programme standard pendant toute sa durée de vie. Elles sont attribuées directement aux succursales participantes. Les promotions fonctionnent à l'aide des trois modèles suivants : `Promotion`, `PromotionSuccursale` et `CompteurPromotion`.
+
+Le modèle `Promotion` est constitué des attributs suivants :
 
 - **id** : La clé primaire.
 - **nom** : Le nom donné à la promotion.
-- **cafe_pour_gratuite** : Le nombre de cafés à acheter pour en obtenir un gratuit pendant la promotion.
+- **cafes_pour_gratuite** : Le nombre de cafés à acheter pour en obtenir un gratuit pendant la promotion.
 - **date_debut** : La date de début de la promotion.
 - **date_fin** : La date de fin de la promotion.
 - **annulee_le** : La date d'annulation de la promotion (`NULL` si elle n'est pas annulée).
@@ -338,10 +411,17 @@ Chaque promotion a son propre compteur, indépendant du compteur de base des caf
 - **id** : La clé primaire.
 - **id_promotion** : Une clé étrangère qui fait référence à la promotion.
 - **id_client** : Une clé étrangère qui fait référence au client.
+- **cafes_gratuits** : Nombre de café gratuit obtenu dans la promotion
+- **progression** : Nombre de café avant d'en avoir un gratuit
+
 
 De cette manière, un même client peut profiter de la même promotion dans les différentes succursales participantes et de plusieurs promotions en même temps.
 
 #### Les rapports
+
+L’attribution des transactions aux rapports de chaque succursale, notamment pour
+les cafés gratuits gagnés et utilisés dans des cafés différents, est justifiée
+dans l’[ADR-0012 — Gestion des rapports avec plusieurs succursales](adr/0012-RAPPORTS_SUCCURSALES.md).
 
 La gestion des rapports comprend une section supplémentaire : la sélection des succursales. Un gérant a accès aux succursales de son périmètre, tandis qu'un propriétaire a accès à toutes les succursales. Dans le rapport, la synthèse et le détail des totaux sont présentés séparément pour chaque succursale sélectionnée, puis pour l'ensemble de la sélection.
 
@@ -350,13 +430,17 @@ La gestion des rapports comprend une section supplémentaire : la sélection des
 
 #### Centralisation de la logique métier
 
-Les opérations sur les cafés, les annulations, les suppressions et les fusions sont centralisées dans [services.py](src/CafeDolbeau/services.py).
+Les opérations sur les cafés, les annulations, les suppressions et les fusions sont centralisées dans [services.py](../src/CafeDolbeau/services.py).
 
 #### Cohérence des données
 
 Les opérations qui modifient plusieurs données utilisent la fonction `_avec_clients_verrouilles`. Celle-ci utilise `transaction.atomic()` pour garantir que toutes les données sont enregistrées ou que l'opération est complètement annulée. Cela évite de modifier les compteurs d'un client sans enregistrer la transaction correspondante.
 
 
-#### Migration des données
+#### Migration des données (V1 -> V2)
 
 Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.
+
+#### Migration des données (V2 -> V3)
+
+Pour préserver l'intégrité des données de la `V2`, les transactions sont tous enregistrés comme étant dans la succursale #1, 

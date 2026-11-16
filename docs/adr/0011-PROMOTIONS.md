@@ -18,4 +18,4 @@ Une nouvelle catégorie a été ajouté, les : **promotions temporaires**. Les p
     Cela réduit la rétension des clients puisque leur compteur ne les suit pas partout.
 
 ## Conséquences
-La solution choisi complexifie la validation dans le code. Elle rajoute une couche supplémentair, le programme doit vérifier si la succursale fait partie d'une promotion, puis, récupérer le bon compteur associé au client. 
+La solution choisi complexifie la validation dans le code. Elle rajoute une couche supplémentaire, le programme doit vérifier si la succursale fait partie d'une promotion, puis, récupérer le bon compteur associé au client. De plus, pour conserver le bon fonctionnement de la règle des cafés gratuits dans les cafés qui ne font pas partie d'une promotion il faut ajouter un compteur qui fait abstraction des achats sous promotion.

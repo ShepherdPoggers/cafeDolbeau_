@@ -6,3 +6,4 @@ Pour ce projet la majorité du code écrit à été généré. Cependant, il n'a
 Les test automatisés ont tous étés écrit par le modèle en même temps pour valider sa sortie, nous n'avons aucune participation dans cette partie.
 
 Le README.MD à premièrement été écrit à la main puis retravailler par le llm. 
+
