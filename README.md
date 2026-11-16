@@ -58,6 +58,11 @@ Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
 docker compose --profile test run --build --rm tests
 ```
 
+Dans les rapports, la synthèse et le détail des totaux présentent chaque
+succursale sélectionnée séparément, puis le global de la sélection. Les mêmes
+sections sont disponibles dans l’export Excel, y compris pour les succursales
+sans activité.
+
 ## Données de démonstration V3
 
 Après le démarrage de la V3 et l’application des migrations, charger les données

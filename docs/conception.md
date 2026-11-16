@@ -23,7 +23,12 @@
       - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
       - [Cohérence des données](#cohérence-des-données)
       - [Migration des données](#migration-des-données)
-        - [Titre temporaire](#titre-temporaire)
+  - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
+      - [Représentation graphieque de la relation employé - succursale](#représentation-graphieque-de-la-relation-employé---succursale)
+    - [Gestion des rôles](#gestion-des-rôles)
+      - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
+    - [Programme de fidélité](#programme-de-fidélité)
+    - [Les rapports](#les-rapports)
 
 ## Implémentation
 
@@ -177,11 +182,11 @@ C'est toujours le cas dans la V2. Si la règle des cafés gratuits n'est pas ég
 
 ###### Tableau explicatif
 
-| Situation | Résultat attendu pour regle = 10 |
-|---|---|
-| 9 cafés achetés, puis achat de 1 café | Total acheté : 10 ; ajout de 1 récompense |
-| Utilisation de cette récompense | Solde gratuit diminué de 1 ; total acheté inchangé |
-| Achat de 2 cartes | +20 achetés, +20 prépayés, +2 gratuits |
+| Situation                             | Résultat attendu pour regle = 10                   |
+| ------------------------------------- | -------------------------------------------------- |
+| 9 cafés achetés, puis achat de 1 café | Total acheté : 10 ; ajout de 1 récompense          |
+| Utilisation de cette récompense       | Solde gratuit diminué de 1 ; total acheté inchangé |
+| Achat de 2 cartes                     | +20 achetés, +20 prépayés, +2 gratuits             |
 
 ##### Consommation
 
@@ -249,23 +254,89 @@ Les opérations qui modifient plusieurs données utilisent la fonction `_avec_cl
 
 Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.
 
+## Gestion des différentes succursales
+
+La gestion des succursales se fait à l'aide des modèles `Succursale` et `AffectationEmployeSuccursale`.
+
+Une succursale est constitué de : 
+
+- **id** : La clé primaire de la succursale 
+- **nom** : Le nom attribué à la succursale
+
+Le modèle `AffectationEmployeSuccursale` permet de garder trace des lieux de travails de chaque employé. Ce modèle est constitué de : 
+
+- **id** : La clé primaire de la relation employé - succursale
+- **employe_id** : Une clé étrangère qui permet de retrouvé l'employé
+- **succursale_id** : Une clé étrangère qui permet de retrouvé la succursale
+
+On peut représenté cette relation entre employé et succursale de cette manière : 
+
+#### Représentation graphieque de la relation employé - succursale
+```mermaid
+erDiagram
+    Employe ||--o{ AffectationEmployeSuccursale : "est affecté"
+    Succursale ||--o{ AffectationEmployeSuccursale : "accueille"
+
+    Employe {
+        int id PK
+        string username
+    }
+
+    Succursale {
+        bigint id PK
+        string nom
+    }
+
+    AffectationEmployeSuccursale {
+        bigint id PK
+        int employe_id FK
+        bigint succursale_id FK
+    }
+```
 
 
 
 
+### Gestion des rôles
+Cette relation est entre autre utile pour rendre impossible la consultation ou la gestion d'une succursale qui n'est pas dans le périmètre d'un gérant *quelquonque*. Effectivement, avec l'arrivée de succursales, et du rôle de **Propriétaire**, la gestion des permissions devient plus restrictive. Il faut prendre en compte si l'employé peut ou non accéder au *tableau de bord* de la succursale et plus. Les permissions sont donc réprésemtés par ce tableau : 
+
+#### Tableau des permissions de Café Dolbeau
+| Fonction                                     | Propriétaire     | Gérant              | Barista                                                        |
+| -------------------------------------------- | ---------------- | ------------------- | -------------------------------------------------------------- |
+| Dix dernières transactions d’un client       | Tout le réseau   | Tout le réseau      | Tout le réseau                                                 |
+| Enregistrer une opération                    | Toute succursale | Ses succursales     | Ses succursales                                                |
+| Annuler une transaction                      | Tout le réseau   | Ses succursales     | Ses propres transactions récentes, dans la succursale active |
+| Liste des transactions dans l’administration | Tout le réseau   | Ses succursales     | Aucun accès                                                    |
+| Rapports et exports, provisoirement          | Tout le réseau        | Ses     succursales | Refusés                                                        |
 
 
+### Programme de fidélité 
+Le programme de fidélité reste semblable aux versions précédentes à l'exceptions de l'ajout d'une nouvelle catégorie les **promotions**. Les promotions s'ajoutent par dessus le programme standard. Elles sont attribués directements aux succursales participantesé. Les promotions fonctionnes à l'aide des trois modèles suivants : `Promotions`, `PromotionSuccursale` et `CompteurPromotion`.
+
+Le modèle `Promotions` est constitué des attributs suivants : 
+- **id** : La clé primaire
+- **nom** : Le nom donnée à la promotion
+- **cafe_pour_gratuite** : Le nombre de café pour en avoir un gratuit pendant la promotion
+- **date_debut** : La date de début de la promotion
+- **date_fin** : La date de fin de la promotion
+- **annulee_le** : La date d'annulation de la promotion (nulle si non annulée)
+- **annulee_par** : L'identifiant de l'employé qui a annulé la promotion (nulle si non annulée)
+- **motif_annulation** : Le motif de l'annulation ex. La compagnie partenaire est associé avec XQC (guillement vide si non annulée)
+
+Pour assigner les promotions aux succursales le modèle `PromotionSuccursale` est utilisé. Ce modèle est constitué des attributs suivants : 
+- **id** : La clé primaire.
+- **id_promotion** : Une clé étrangère qui réfère à la promotion.
+- **id_succursale** : Une clé étrangère qui réfère à la succursale participante.  
+
+Lorsqu'une promotion est assignée à une succursale, elle ne peut pas être retiré pour une succursale unique au milieu de sa durée. Ce choix a été fait pour éviter certaines confusions chez les clients. Alors soit on l'anulle pour tous ou on ne l'annulle pas. Dans quel, le propriétaire qui l'a annulé est enregistré avec la date de l'annulation et le motif. 
+
+Chaque promotion à son propre compteur indépendant du compteur de base des cafés gratuits. Pour faire le lien avec les clients, le modèle `CompteurPromotion` est utilisé. Ce modèle est constitué des attributs suivants : 
+- **id** : La clé primaire
+- **id_promotion** : Une clé étrangère qui réfère à la promotion.
+- **id_client** : Une clé étrangère qui réfère au client.
+
+De cette manière un même client peut profiter de la même promotion dans les différentes succursales participantes et des différentes promotions en même temps. 
 
 
-
-
-
-
-##### Titre temporaire
-| Fonction | Propriétaire | Gérant | Barista |
-|---|---|---|---|
-| Dix dernières transactions d’un client | Tout le réseau | Tout le réseau | Tout le réseau |
-| Enregistrer une opération | Toute succursale | Ses succursales | Ses succursales |
-| Annuler une transaction | Tout le réseau | Ses succursales | Ses propres transactions récentes, dans la succursale de l’URL |
-| Liste des transactions dans l’administration | Tout le réseau | Ses succursales | Aucun accès |
-| Rapports et exports, provisoirement | Autorisés | Refusés | Refusés |
+### Les rapports
+La gestion des rapports se fait avec une section supplémentaire, la sélection des succursales. Un gérant à accès aux succursales dans son périmètre et les propriétaires à toutes les succursales. Dans le rapport on divise la synthèse avec les succursales sélectionnées de même pour les détails. 

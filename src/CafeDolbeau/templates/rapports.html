@@ -46,10 +46,16 @@
         <h2 id="titre-synthese">Rapport du {{ rapport.date_debut|date:"d/m/Y" }} au {{ rapport.date_fin|date:"d/m/Y" }}</h2>
         <p>Succursales incluses : {% for succursale in rapport.succursales %}#{{ succursale.pk }} — {{ succursale.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
         <p>Quantités de cafés. Les annulations sont déduites à leur date d’annulation ; le total net peut être négatif.</p>
-        {% include "tableau_rapport.html" %}
+        {% for synthese in rapport.syntheses %}
+        <h3>{{ synthese.libelle }}</h3>
+        {% include "tableau_rapport.html" with rapport=synthese %}
+        {% endfor %}
         <details class="rapport-totaux-details">
         <summary>Voir les quantités enregistrées et annulées</summary>
-        {% include "detail_totaux_rapport.html" %}
+        {% for synthese in rapport.syntheses %}
+        <h3>{{ synthese.libelle }}</h3>
+        {% include "detail_totaux_rapport.html" with rapport=synthese %}
+        {% endfor %}
         </details>
     </section>
     {% if rapport.precision == "transaction" %}

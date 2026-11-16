@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import date, datetime
 from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -10,7 +11,7 @@ from openpyxl import load_workbook
 
 from ..forms.forms_rapports import RapportForm
 from ..models import AffectationEmployeSuccursale, AnnulationTransaction, Client, Employe, Promotion, Succursale, TransactionCafe
-from ..rapports import generer_rapport
+from ..rapports import FUSEAU_RAPPORT, exporter_excel, generer_rapport
 from ..views import views_rapports
 from .test_annulations import creer_employe
 
@@ -75,6 +76,62 @@ class RapportsSuccursalesTests(TestCase):
         self.client.force_login(self.proprietaire)
         reponse = self.client.get(reverse("rapports"), self.filtres(succursales=[self.s3.pk]))
         self.assertEqual(reponse.context["rapport"].total, 100)
+
+    def test_syntheses_par_succursale_puis_global_html_et_excel(self):
+        self.ligne(self.s1, 3)
+        annulee = self.ligne(self.s2, 5)
+        AnnulationTransaction.objects.create(transaction=annulee, employe=self.proprietaire)
+        self.ligne(self.s2, 2, type_transaction="gratuit")
+        self.ligne(self.s3, 999)
+        rapport = self.generer()
+        self.assertEqual([b.succursale_id for b in rapport.par_succursale], [self.s1.pk, self.s2.pk])
+        self.assertEqual([b.total for b in rapport.syntheses], [3, 2, 5])
+        self.assertEqual([(c.enregistrees, c.annulees, c.net) for c in rapport.par_succursale[1].totaux], [(5, 5, 0), (2, 0, 2)])
+        for i, total in enumerate(rapport.totaux):
+            self.assertEqual(sum(b.totaux[i].enregistrees for b in rapport.par_succursale), total.enregistrees)
+            self.assertEqual(sum(b.totaux[i].annulees for b in rapport.par_succursale), total.annulees)
+        reponse = self.client.get(reverse("rapports"), self.filtres())
+        html = reponse.content.decode()
+        for bloc in rapport.syntheses:
+            self.assertContains(reponse, f"<h3>{bloc.libelle}</h3>", count=2, html=True)
+        self.assertLess(html.index(f"<h3>{rapport.par_succursale[0].libelle}</h3>"), html.index("<h3>Global"))
+        self.assertNotContains(reponse, self.s3.nom)
+        classeur = load_workbook(exporter_excel(rapport))
+        for nom in ("Synthèse", "Détail des totaux"):
+            feuille = classeur[nom]
+            titres = [row[0] for row in feuille.iter_rows(values_only=True) if row[0] in [b.libelle for b in rapport.syntheses]]
+            self.assertEqual(titres, [b.libelle for b in rapport.syntheses])
+        nets = [row for row in classeur["Synthèse"].iter_rows(values_only=True) if row[0] == "TOTAL"]
+        self.assertEqual(nets, [("TOTAL", 3, 0, 3), ("TOTAL", 0, 2, 2), ("TOTAL", 3, 2, 5)])
+
+    def test_synthese_succursale_vide_presente_et_categories_limitees(self):
+        self.ligne(self.s1, 4)
+        reponse = self.client.get(reverse("rapports"), self.filtres(types=["achat"], precision="jour"))
+        rapport = reponse.context["rapport"]
+        self.assertEqual([b.total for b in rapport.syntheses], [4, 0, 4])
+        self.assertEqual([c.code for c in rapport.par_succursale[1].totaux], ["achat"])
+        self.assertTrue(all(g.total == 0 for g in rapport.par_succursale[1].groupes))
+
+    def test_groupes_par_succursale_et_annulation_source_hors_periode(self):
+        ancienne = self.ligne(self.s2, 5)
+        TransactionCafe.objects.filter(pk=ancienne.pk).update(date_creation=datetime(2026, 9, 30, 12, tzinfo=FUSEAU_RAPPORT))
+        trace = AnnulationTransaction.objects.create(transaction=ancienne, employe=self.proprietaire)
+        AnnulationTransaction.objects.filter(pk=trace.pk).update(date_annulation=datetime(2026, 10, 2, 12, tzinfo=FUSEAU_RAPPORT))
+        achat = self.ligne(self.s1, 3)
+        TransactionCafe.objects.filter(pk=achat.pk).update(date_creation=datetime(2026, 10, 1, 12, tzinfo=FUSEAU_RAPPORT))
+        for precision in ("periode", "jour", "semaine", "mois", "transaction"):
+            with self.subTest(precision=precision):
+                rapport = generer_rapport(
+                    date_debut=date(2026, 9, 28) if precision == "semaine" else date(2026, 10, 1),
+                    date_fin=date(2026, 10, 31) if precision == "mois" else date(2026, 10, 4),
+                    types=("achat",), precision=precision, employe=self.gerant,
+                    succursale_ids=[self.s1.pk, self.s2.pk],
+                )
+                # La semaine inclut la vente du 30/09 ; les autres sélections ne comptent que son annulation.
+                self.assertEqual(rapport.par_succursale[1].total, 0 if precision == "semaine" else -5)
+                for i, groupe in enumerate(rapport.groupes):
+                    self.assertEqual(sum(b.groupes[i].categories[0].enregistrees for b in rapport.par_succursale), groupe.categories[0].enregistrees)
+                    self.assertEqual(sum(b.groupes[i].categories[0].annulees for b in rapport.par_succursale), groupe.categories[0].annulees)
 
     def test_annulation_liee_a_succursale_origine_et_promotion_conservee(self):
         promo = Promotion.objects.create(nom="Promotion du réseau", cafes_pour_gratuite=3,
@@ -176,7 +233,7 @@ class RapportsSuccursalesTests(TestCase):
                          {f"#{self.s2.pk} — {self.s2.nom}"})
         parametres = dict(classeur["Paramètres"].iter_rows(min_row=2, values_only=True))
         self.assertEqual(parametres["Succursales"], f"#{self.s2.pk} — {self.s2.nom}")
-        self.assertEqual(classeur["Synthèse"].cell(2, 4).value, 51)
+        self.assertEqual(classeur["Synthèse"].cell(3, 4).value, 51)
 
     def test_barista_refuse_et_navigation_visible_aux_gerants(self):
         self.assertContains(self.client.get(reverse("accueil_succursale", args=[1])), 'action="/rapports/"')

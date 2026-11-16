@@ -87,6 +87,19 @@ class EvenementRapport:
 
 
 @dataclass
+class SyntheseRapport:
+    libelle: str
+    precision: str
+    totaux: list
+    groupes: list
+    succursale_id: int | None = None
+
+    @property
+    def total(self):
+        return sum(categorie.net for categorie in self.totaux)
+
+
+@dataclass
 class Rapport:
     date_debut: date
     date_fin: date
@@ -97,6 +110,13 @@ class Rapport:
     groupes: list
     evenements: list
     succursales: tuple
+    par_succursale: tuple
+
+    @property
+    def syntheses(self):
+        return (*self.par_succursale, SyntheseRapport(
+            "Global — succursales sélectionnées", self.precision, self.totaux, self.groupes,
+        ))
 
     @property
     def total(self):
@@ -157,6 +177,18 @@ def generer_rapport(*, date_debut, date_fin, types, precision, employe, succursa
     categories, colonnes = _categories(types)
     groupes = _groupes(date_debut, date_fin, precision, categories)
     groupes_par_date = {groupe.debut: groupe for groupe in groupes}
+    par_succursale = []
+    quantites_succursales = {}
+    for succursale in succursales:
+        totaux_succursale, _ = _categories(types)
+        groupes_succursale = _groupes(date_debut, date_fin, precision, totaux_succursale)
+        par_succursale.append(SyntheseRapport(
+            f"#{succursale.pk} — {succursale.nom}", precision, totaux_succursale,
+            groupes_succursale, succursale.pk,
+        ))
+        quantites_succursales[succursale.pk] = (
+            totaux_succursale, {groupe.debut: groupe for groupe in groupes_succursale},
+        )
     evenements = []
     lignes = TransactionCafe.objects.filter(type_transaction__in=types, succursale_id__in=identifiants).filter(
         Q(date_creation__gte=debut, date_creation__lt=fin_exclusive)
@@ -181,7 +213,11 @@ def generer_rapport(*, date_debut, date_fin, types, precision, employe, succursa
             cle = date_debut if precision in ("periode", "transaction") else _debut_groupe(date_locale.date(), precision)
             index = colonnes[ligne["type_transaction"]]
             champ = "annulees" if annulation else "enregistrees"
-            for quantites in (categories[index], groupes_par_date[cle].categories[index]):
+            totaux_succursale, groupes_succursale = quantites_succursales[ligne["succursale_id"]]
+            for quantites in (
+                categories[index], groupes_par_date[cle].categories[index],
+                totaux_succursale[index], groupes_succursale[cle].categories[index],
+            ):
                 setattr(quantites, champ, getattr(quantites, champ) + ligne["quantite"])
             if precision == "transaction":
                 evenements.append(EvenementRapport(
@@ -193,7 +229,8 @@ def generer_rapport(*, date_debut, date_fin, types, precision, employe, succursa
                 ))
     evenements.sort(key=lambda evenement: (evenement.date.timestamp(), evenement.transaction_id, evenement.nature == "Annulation"))
     return Rapport(date_debut, date_fin, precision, tuple(types),
-                   timezone.now().astimezone(FUSEAU_RAPPORT), categories, groupes, evenements, succursales)
+                   timezone.now().astimezone(FUSEAU_RAPPORT), categories, groupes, evenements, succursales,
+                   tuple(par_succursale))
 
 
 def _ajouter_ligne(feuille, valeurs):
@@ -223,7 +260,26 @@ def _mettre_en_forme(feuille, filtre=True):
 
 def _detail_totaux_excel(classeur, rapport):
     feuille = classeur.create_sheet("Détail des totaux")
+    for synthese in rapport.syntheses:
+        _titre_synthese_excel(feuille, synthese.libelle, 4)
+        _bloc_detail_totaux_excel(feuille, synthese)
+    _mettre_en_forme(feuille, filtre=False)
+    feuille.freeze_panes = "A3"
+
+
+def _titre_synthese_excel(feuille, libelle, colonnes):
+    _ajouter_ligne(feuille, [libelle])
+    ligne = feuille.max_row
+    feuille.merge_cells(start_row=ligne, start_column=1, end_row=ligne, end_column=colonnes)
+    for cellule in feuille[ligne]:
+        cellule.fill = PatternFill("solid", fgColor="305B96")
+        cellule.font = Font(bold=True, color="FFFFFF")
+
+
+def _bloc_detail_totaux_excel(feuille, rapport):
     _ajouter_ligne(feuille, ["Catégorie", "Enregistrées", "Annulées", "Net"])
+    for cellule in feuille[feuille.max_row]:
+        cellule.font = Font(bold=True)
     blocs = [
         (groupe.debut if groupe.debut == groupe.fin else groupe.libelle_periode, groupe.categories)
         for groupe in rapport.groupes
@@ -248,7 +304,6 @@ def _detail_totaux_excel(classeur, rapport):
                 cellule.fill = PatternFill("solid", fgColor=fond)
                 cellule.font = Font(bold=total, color=texte)
                 cellule.alignment = Alignment(horizontal="left" if cellule.column == 1 else "right")
-    _mettre_en_forme(feuille, filtre=False)
 
 
 def exporter_excel(rapport):
@@ -270,17 +325,20 @@ def exporter_excel(rapport):
 
     synthese = classeur.create_sheet("Synthèse")
     entete_periode = "Date" if rapport.precision == "jour" else "Période"
-    _ajouter_ligne(synthese, [entete_periode, *(categorie.libelle for categorie in rapport.totaux), "TOTAL"])
-    for groupe in rapport.groupes:
-        periode = groupe.debut if groupe.debut == groupe.fin else groupe.libelle_periode
-        _ajouter_ligne(synthese, [periode, *(categorie.net for categorie in groupe.categories), groupe.total])
-    _ajouter_ligne(synthese, ["TOTAL", *(categorie.net for categorie in rapport.totaux), rapport.total])
-    _mettre_en_forme(synthese)
-    synthese.freeze_panes = "B2"
-    synthese.auto_filter.ref = f"A1:{get_column_letter(synthese.max_column)}{synthese.max_row - 1}"
-    for cellule in synthese[synthese.max_row]:
-        cellule.font = Font(bold=True)
-        cellule.fill = PatternFill("solid", fgColor="EDF1F6")
+    for bloc in rapport.syntheses:
+        _titre_synthese_excel(synthese, bloc.libelle, len(rapport.totaux) + 2)
+        _ajouter_ligne(synthese, [entete_periode, *(categorie.libelle for categorie in bloc.totaux), "TOTAL"])
+        for cellule in synthese[synthese.max_row]:
+            cellule.font = Font(bold=True)
+        for groupe in bloc.groupes:
+            periode = groupe.debut if groupe.debut == groupe.fin else groupe.libelle_periode
+            _ajouter_ligne(synthese, [periode, *(categorie.net for categorie in groupe.categories), groupe.total])
+        _ajouter_ligne(synthese, ["TOTAL", *(categorie.net for categorie in bloc.totaux), bloc.total])
+        for cellule in synthese[synthese.max_row]:
+            cellule.font = Font(bold=True)
+            cellule.fill = PatternFill("solid", fgColor="EDF1F6")
+    _mettre_en_forme(synthese, filtre=False)
+    synthese.freeze_panes = "B3"
 
     _detail_totaux_excel(classeur, rapport)
 
