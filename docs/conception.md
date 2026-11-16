@@ -1,36 +1,36 @@
-# Conception Café Dolbeau
+# Conception Café Dolbeau <!-- omit in toc -->
 
-## Table des matières
 
-- [Conception Café Dolbeau](#conception-café-dolbeau)
-  - [Table des matières](#table-des-matières)
-  - [Implémentation](#implémentation)
-    - [Structure du projet](#structure-du-projet)
-    - [Déploiement avec nginx](#déploiement-avec-nginx)
-    - [Clients](#clients)
-      - [Suppression d'un client](#suppression-dun-client)
-      - [Fusion de deux clients](#fusion-de-deux-clients)
-    - [Achat d'articles](#achat-darticles)
-      - [Onzième café gratuit et cartes prépayées](#onzième-café-gratuit-et-cartes-prépayées)
-        - [Calcul des cafés gratuits](#calcul-des-cafés-gratuits)
-        - [Explication de la logique](#explication-de-la-logique)
-          - [Tableau explicatif](#tableau-explicatif)
-        - [Consommation](#consommation)
-      - [Annuler une transaction](#annuler-une-transaction)
-    - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
-    - [Création des rapports](#création-des-rapports)
-    - [Gestion des permissions](#gestion-des-permissions)
-    - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
-        - [Représentation graphique de la relation employé - succursale](#représentation-graphique-de-la-relation-employé---succursale)
-      - [Gestion des rôles](#gestion-des-rôles)
-        - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
-      - [Programme de fidélité](#programme-de-fidélité)
-      - [Les rapports](#les-rapports)
-    - [Choix techniques](#choix-techniques)
-      - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
-      - [Cohérence des données](#cohérence-des-données)
-      - [Migration des données (V1 -\> V2)](#migration-des-données-v1---v2)
-      - [Migration des données (V2 -\> V3)](#migration-des-données-v2---v3)
+## Table des matières <!-- omit in toc -->
+
+
+- [Implémentation](#implémentation)
+  - [Structure du projet](#structure-du-projet)
+  - [Déploiement avec nginx](#déploiement-avec-nginx)
+  - [Clients](#clients)
+    - [Suppression d'un client](#suppression-dun-client)
+    - [Fusion de deux clients](#fusion-de-deux-clients)
+  - [Achat d'articles](#achat-darticles)
+    - [Onzième café gratuit et cartes prépayées](#onzième-café-gratuit-et-cartes-prépayées)
+      - [Calcul des cafés gratuits](#calcul-des-cafés-gratuits)
+      - [Explication de la logique](#explication-de-la-logique)
+        - [Tableau explicatif](#tableau-explicatif)
+      - [Consommation](#consommation)
+    - [Annuler une transaction](#annuler-une-transaction)
+  - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
+  - [Création des rapports](#création-des-rapports)
+  - [Gestion des permissions](#gestion-des-permissions)
+  - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
+      - [Représentation graphique de la relation employé - succursale](#représentation-graphique-de-la-relation-employé---succursale)
+    - [Gestion des rôles](#gestion-des-rôles)
+      - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
+    - [Programme de fidélité](#programme-de-fidélité)
+    - [Les rapports](#les-rapports)
+- [Choix techniques](#choix-techniques)
+  - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
+  - [Cohérence des données](#cohérence-des-données)
+  - [Migration des données (V1 -\> V2)](#migration-des-données-v1---v2)
+  - [Migration des données (V2 -\> V3)](#migration-des-données-v2---v3)
 
 ## Implémentation
 
@@ -184,9 +184,12 @@ Ce modèle contient les attributs suivants :
 - **date_creation** : Date de la transaction.
 - **employe** : Employé ayant enregistré la transaction.
 - **operation_id** : UUID commun aux lignes d’une même opération, permettant de les regrouper pour une annulation.
-- **variation_achetes** : Variation du compteur de cafés achetés causée par cette ligne.
-- **variation_prepayes** : Variation du compteur de cafés prépayés causée par cette ligne.
-- **variation_gratuits** : Variation du compteur de cafés gratuits causée par cette ligne.
+- **variation_achetes** : Variation du compteur de cafés achetés causée par cette transaction.
+- **variation_prepayes** : Variation du compteur de cafés prépayés causée par cette transaction.
+- **variation_gratuits** : Variation du compteur de cafés gratuits causée par cette transaction.
+- **variation_fidelite** : Variation du compteur de fidélité normal causée par cette transaction
+- **variation_progression_promotion** : Variation de la progression du client dans la promotion causée par cette transaction.
+- **variation_gratuits_promotion** : Variation du nombre de cafés gratuits disponibles dans la promotion causée par cette ligne.
 - **succursale** : L'id de la succursale dans laquelle la transaction a été effectué
 - **promotion** : L'id de la promotion si il y a lieu, sinon null
 
@@ -241,7 +244,7 @@ C'est toujours le cas dans la V2. Si la règle des cafés gratuits n'est pas ég
 | ------------------------------------- | -------------------------------------------------- |
 | 9 achats admissibles, puis achat de 1 café hors promotion | Compteur de fidélité : 10 ; ajout de 1 récompense |
 | Utilisation de cette récompense       | Solde gratuit diminué de 1 ; total acheté inchangé |
-| Achat de 2 cartes                     | +20 achetés, +20 prépayés, +2 gratuits             |
+| Achat de 2 cartes                     | +20 prépayés, +2 gratuits             |
 
 ##### Consommation
 
@@ -259,12 +262,12 @@ Une annulation se déroule ainsi :
    - Si les paramètres de variation sont NULL, l'employé doit les spécifier.
 3. Les opérations sont inversées dans le bon client.
    - Les compteurs ne descendent jamais sous 0.
-4. L'annulation est enregistrée dans la table `annulationTransaction`.
+4. L'annulation est enregistrée dans le modèle `AnnulationTransaction`.
 
 
 ### Paramètres des cafés gratuits
 
-Pour simplifier la gestion des paramètres des cafés gratuits, une section complète a été ajoutée dans l'administration. Cette section découle du modèle `ParametreCafe`. Ce modèle a les attributs suivants :
+Pour simplifier la gestion des paramètres des cafés gratuits, une section complète a été ajoutée dans l'administration. Cette section découle du modèle `ParametresCafe`. Ce modèle a les attributs suivants :
 
 - **id** : Identifiant numérique.
 - **cafes_pour_gratuite** : Le nombre de cafés pour en avoir un gratuit (*quantite*).
@@ -401,18 +404,18 @@ Le modèle `Promotion` est constitué des attributs suivants :
 Pour affecter les promotions aux succursales, le modèle `PromotionSuccursale` est utilisé. Ce modèle est constitué des attributs suivants :
 
 - **id** : La clé primaire.
-- **id_promotion** : Une clé étrangère qui fait référence à la promotion.
-- **id_succursale** : Une clé étrangère qui fait référence à la succursale participante.
+- **promotion_id** : L’identifiant de la promotion référencée par la clé étrangère `promotion`.
+- **succursale_id** : L’identifiant de la succursale participante référencée par la clé étrangère `succursale`.
 
 Lorsqu'une promotion est affectée à une succursale, elle ne peut pas être retirée d'une seule succursale pendant sa période de validité. Ce choix a été fait pour éviter certaines confusions chez les clients. Soit on l'annule pour toutes les succursales, soit on ne l'annule pas. En cas d'annulation, le propriétaire qui l'a annulée est enregistré, ainsi que la date et le motif de l'annulation.
 
 Chaque promotion a son propre compteur, indépendant du compteur de base des cafés gratuits. Pour faire le lien avec les clients, le modèle `CompteurPromotion` est utilisé. Ce modèle est constitué des attributs suivants :
 
 - **id** : La clé primaire.
-- **id_promotion** : Une clé étrangère qui fait référence à la promotion.
-- **id_client** : Une clé étrangère qui fait référence au client.
+- **promotion_id** : L’identifiant de la promotion référencée par la clé étrangère `promotion`.
+- **client_id** : L’identifiant du client référencé par la clé étrangère `client`.
 - **cafes_gratuits** : Nombre de café gratuit obtenu dans la promotion
-- **progression** : Nombre de café avant d'en avoir un gratuit
+- **progression** : Nombre de café accumulés pour la promotion
 
 
 De cette manière, un même client peut profiter de la même promotion dans les différentes succursales participantes et de plusieurs promotions en même temps.
@@ -426,21 +429,24 @@ dans l’[ADR-0012 — Gestion des rapports avec plusieurs succursales](adr/0012
 La gestion des rapports comprend une section supplémentaire : la sélection des succursales. Un gérant a accès aux succursales de son périmètre, tandis qu'un propriétaire a accès à toutes les succursales. Dans le rapport, la synthèse et le détail des totaux sont présentés séparément pour chaque succursale sélectionnée, puis pour l'ensemble de la sélection.
 
 
-### Choix techniques
+## Choix techniques
 
-#### Centralisation de la logique métier
+### Centralisation de la logique métier
 
 Les opérations sur les cafés, les annulations, les suppressions et les fusions sont centralisées dans [services.py](../src/CafeDolbeau/services.py).
 
-#### Cohérence des données
+### Cohérence des données
 
 Les opérations qui modifient plusieurs données utilisent la fonction `_avec_clients_verrouilles`. Celle-ci utilise `transaction.atomic()` pour garantir que toutes les données sont enregistrées ou que l'opération est complètement annulée. Cela évite de modifier les compteurs d'un client sans enregistrer la transaction correspondante.
 
 
-#### Migration des données (V1 -> V2)
+### Migration des données (V1 -> V2)
 
 Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.
 
-#### Migration des données (V2 -> V3)
+### Migration des données (V2 -> V3)
 
-Pour préserver l'intégrité des données de la `V2`, les transactions sont tous enregistrés comme étant dans la succursale #1, 
+Pour préserver l'intégrité des données de la `V2`, les transactions sont tous enregistrés comme étant dans la succursale #1. Tous les employés sont attribués à la succursale #1. Pour les autres attributs qui peuvent être nullable qui ont étés ajoutés ils sont mis à NULL.
+
+Les étapes, les précautions et les résultats de notre vérification sont
+présentés dans la [procédure de migration V2 → V3](migration.md#migrer-les-données-de-la-v2-vers-la-v3).

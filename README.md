@@ -205,7 +205,7 @@ python src/manage.py balances
 
 Sous Windows, utiliser `.\.venv\Scripts\python.exe src/manage.py balances`.
 
-Cette commande affiche un CSV trié par identifiant avec, pour chaque client, les achats cumulés (`cafes_achetes`), les étampes vers la prochaine récompense (`etampes`), les cafés gratuits en réserve (`recompenses_en_reserve`) et les cafés restants sur les cartes (`cafes_prepayes`). Les étampes correspondent au reste des achats cumulés divisé par le seuil actuellement en vigueur, soit 10 lors de la migration V1. Le client fictif « Client supprimé » est exclu. Les données ne sont pas modifiées.
+Cette commande affiche un CSV trié par identifiant avec, pour chaque client, les achats cumulés (`cafes_achetes`), les étampes vers la prochaine récompense (`etampes`), les cafés gratuits en réserve (`recompenses_en_reserve`) et les cafés restants sur les cartes (`cafes_prepayes`). Les étampes correspondent au reste du compteur de fidélité habituelle (`nombre_cafes_fidelite`) divisé par le seuil actuellement en vigueur, soit 10 lors de la migration V1. Les achats promotionnels restent inclus dans les achats cumulés, mais ne font pas avancer ce compteur habituel. Le client fictif « Client supprimé » est exclu. Les données ne sont pas modifiées.
 
 ## Relancer le projet
 

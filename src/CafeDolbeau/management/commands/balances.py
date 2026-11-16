@@ -31,8 +31,9 @@ class Command(BaseCommand):
             "id", "client", "cafes_achetes", "etampes",
             "recompenses_en_reserve", "cafes_prepayes",
         ))
-        for identifiant, nom, achetes, gratuits, prepayes in clients.values_list(
+        for identifiant, nom, achetes, fidelite, gratuits, prepayes in clients.values_list(
             "pk", "nom_complet", "nombre_cafes_achetes",
+            "nombre_cafes_fidelite",
             "nombre_cafes_gratuits", "nombre_cafes_prepayes",
         ).iterator():
-            writer.writerow((identifiant, nom, achetes, achetes % seuil, gratuits, prepayes))
+            writer.writerow((identifiant, nom, achetes, fidelite % seuil, gratuits, prepayes))

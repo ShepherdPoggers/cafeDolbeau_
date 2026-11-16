@@ -6,7 +6,9 @@ from django.core.management import call_command, CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from ..models import AnnulationTransaction, Client, Employe, ParametresCafe, Succursale, TransactionCafe
+from ..models import AnnulationTransaction, Client, Employe, ParametresCafe, Promotion, PromotionSuccursale, Succursale, TransactionCafe
+from ..services import ajouter_cafes
+from .test_annulations import creer_employe
 
 
 class BalancesTests(TestCase):
@@ -31,6 +33,27 @@ class BalancesTests(TestCase):
         Client.objects.create(pk=-1, nom_complet="Client supprimé", est_actif=False)
         personne = Client.objects.create(nom_complet="Source", telephone="111", est_actif=False)
         self.assertEqual([ligne["id"] for ligne in self.soldes()], [str(personne.pk)])
+
+    def test_achats_promotionnels_conservent_les_etampes_habituelles(self):
+        proprietaire = creer_employe("proprietaire-balances", "Propriétaire")
+        promotion = Promotion.objects.create(
+            nom="Ouverture", cafes_pour_gratuite=3,
+            date_debut=timezone.localdate(), date_fin=timezone.localdate(),
+        )
+        PromotionSuccursale.objects.create(promotion=promotion, succursale_id=1)
+        for achats_initiaux in (0, 9):
+            personne = Client.objects.create(
+                nom_complet=f"Client {achats_initiaux}", telephone=f"promo-{achats_initiaux}",
+                nombre_cafes_achetes=achats_initiaux,
+            )
+            ajouter_cafes(personne, 4, employe=proprietaire, succursale_id=1)
+            avant = list(Client.objects.values())
+            for arguments in ((), ("--succursale", "1")):
+                with self.subTest(achats_initiaux=achats_initiaux, arguments=arguments):
+                    ligne = next(ligne for ligne in self.soldes(*arguments) if ligne["id"] == str(personne.pk))
+                    self.assertEqual(ligne["cafes_achetes"], str(achats_initiaux + 4))
+                    self.assertEqual(ligne["etampes"], str(achats_initiaux))
+            self.assertEqual(list(Client.objects.values()), avant)
 
     def test_utilise_le_seuil_en_vigueur_pour_les_etampes(self):
         Client.objects.create(nom_complet="Alice", telephone="111", nombre_cafes_achetes=37)
