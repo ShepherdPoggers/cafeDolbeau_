@@ -24,7 +24,7 @@
       - [Cohérence des données](#cohérence-des-données)
       - [Migration des données](#migration-des-données)
   - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
-      - [Représentation graphieque de la relation employé - succursale](#représentation-graphieque-de-la-relation-employé---succursale)
+      - [Représentation graphique de la relation employé - succursale](#représentation-graphique-de-la-relation-employé---succursale)
     - [Gestion des rôles](#gestion-des-rôles)
       - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
     - [Programme de fidélité](#programme-de-fidélité)
@@ -36,48 +36,36 @@
 
 ```text
 .                               # Racine du projet
-├── docs/                        # Documentation du projet
-│   ├── adr/                     # Décisions d'architecture (0001 à 0007)
+├── docker/                     # Conteneurs, Compose, nginx et Gunicorn
+├── docs/                       # Documentation du projet
+│   ├── adr/                    # Décisions d’architecture
 │   ├── conception.md
-│   └── retrospection-V1.md
+│   ├── deploiement.md
+│   └── migration.md
+├── scripts/                    # Configuration, migration et données de démonstration
 ├── src/
-│   ├── config/                  # Configuration du projet Django
-│   │   ├── __init__.py
-│   │   ├── asgi.py
-│   │   ├── settings.py
-│   │   ├── urls.py
-│   │   └── wsgi.py
-│   ├── CafeDolbeau/             # Application Django
-│   │   ├── admin/               # Administration Django
-│   │   │   ├── __init__.py
-│   │   │   ├── admin.py         # Administration des modèles
-│   │   │   ├── admin_fusions.py # Administration des fusions de clients
-│   │   │   └── admin_site.py    # Personnalisation du site d'administration
-│   │   ├── forms/               # Formulaires
-│   │   │   ├── __init__.py
-│   │   │   ├── forms.py
-│   │   │   ├── forms_annulation.py
-│   │   │   └── forms_rapports.py
-│   │   ├── migrations/          # Migrations de la base de données (0001 à 0016)
-│   │   ├── static/              # Fichiers CSS et JavaScript
-│   │   ├── templates/           # Pages et fragments HTML
-│   │   ├── test/                # Tests Django
-│   │   ├── tests_js/            # Tests JavaScript
-│   │   ├── views/               # Vues Django
-│   │   │   ├── __init__.py
-│   │   │   ├── views.py
-│   │   │   └── views_rapports.py
-│   │   ├── __init__.py
-│   │   ├── apps.py              # Configuration de l'application
-│   │   ├── models.py            # Modèles de données
-│   │   ├── permissions.py       # Gestion des permissions
-│   │   ├── rapports.py          # Calcul des rapports
-│   │   └── services.py          # Logique métier des opérations
-│   └── manage.py                # Commandes Django
-├── .gitignore                   # Fichiers exclus du suivi Git
-├── AI-USAGE.md                  # Utilisation de l'intelligence artificielle
+│   ├── config/                 # Configuration Django et routes
+│   ├── CafeDolbeau/            # Application Django
+│   │   ├── admin/              # Administration des modèles
+│   │   ├── forms/              # Formulaires
+│   │   ├── management/commands/ # Commandes de soldes et de démonstration V3
+│   │   ├── migrations/         # Migrations de la base de données
+│   │   ├── static/             # Fichiers CSS et JavaScript
+│   │   ├── templates/          # Pages et fragments HTML
+│   │   ├── test/               # Tests Django
+│   │   ├── tests_js/           # Tests JavaScript
+│   │   ├── views/              # Vues Django
+│   │   ├── models.py           # Modèles de données
+│   │   ├── permissions.py      # Rôles et accès aux succursales
+│   │   ├── promotions.py       # Promotions et compteurs associés
+│   │   ├── rapports.py         # Calcul et export des rapports
+│   │   └── services.py         # Logique métier des opérations
+│   └── manage.py               # Commandes Django
+├── .env.example                # Variables d’environnement documentées
+├── .gitignore
+├── AI-USAGE.md
 ├── README.md
-└── requirements.txt
+└── requirements.txt            # Dépendances Python
 ```
 
 
@@ -100,7 +88,7 @@ Cette vérification est faite à l'aide de la redéfinition de la fonction `clea
 On peut chercher un client à l'aide de l'un de ces trois champs : nom, téléphone ou courriel.
 Le téléphone et le courriel permettent de distinguer deux homonymes.
 
-Pour faciliter l'inscription des clients, nous avons choisi de permettre la création d'un compte autant avec le téléphone qu'avec le courriel.
+Pour faciliter l'inscription des clients, nous avons choisi de permettre la création d'un compte aussi bien avec le téléphone qu'avec le courriel.
 Pour les cafés, nous avons préféré en faire des attributs du client puisqu'au final, ce ne sont que des chiffres incrémentés et décrémentés. Cela ne servait à rien de complexifier notre BD avec des tables séparées.
 Les cafés gratuits ont été mis à part puisqu'ils ne sont pas considérés dans le nombre total de cafés : ils n'ont pas été achetés.
 
@@ -133,7 +121,7 @@ Le retour en arrière est possible tant qu'aucune transaction n'est effectuée s
 Lorsqu'un client achète un café, le modèle `TransactionCafe` est utilisé.
 Ce modèle contient les attributs suivants :
 
-- `type_transaction` -> Permet de savoir si la transaction est un achat, un café prépayé, un café gratuit ou une utilisation de café prépayé/gratuit.
+- `type_transaction` -> Permet de savoir si la transaction est un achat, un café prépayé, un café gratuit ou l'utilisation d'un café prépayé ou gratuit.
 - `client` -> ID du client.
 - `client_origine_id` -> Si un client est supprimé, cet attribut permet de le différencier des autres.
 - `quantite` -> Nombre de cafés.
@@ -146,10 +134,10 @@ Ce modèle contient les attributs suivants :
 
 Les variations mémorisent les effets de chaque ligne pour pouvoir les inverser lors d’une annulation. Une valeur positive ajoute des cafés, une valeur négative en retire et zéro laisse le compteur inchangé. Pour les anciennes transactions, ces champs peuvent être à `NULL` : leurs effets doivent alors être renseignés par un gérant avant l’annulation.
 
-Le champ type_transaction permet de savoir quoi faire selon le type de transaction via la vue `ajouter_cafes_client`, qui utilise la fonction `ajouter_cafes`.
+Le champ `type_transaction` permet de savoir quoi faire selon le type de transaction via la vue `ajouter_cafes_client`, qui utilise la fonction `ajouter_cafes`.
 
 - **ACHAT** -> Achat classique : on incrémente de *quantite* le nombre de cafés et on vérifie si un café doit être gratuit.
-- **PREPAYE** -> Ajout de *quantite* × 10 cafés prépayés dans le client + *quantite* cafés gratuits.
+- **PREPAYE** -> Ajout de *quantite* × 10 cafés prépayés au compte du client + *quantite* cafés gratuits.
 - **GRATUIT** -> Affiche un message pour féliciter le client et ajoute un café gratuit.
 - **UTILISE** -> Utilisation de *quantite* cafés prépayés.
 
@@ -191,7 +179,7 @@ C'est toujours le cas dans la V2. Si la règle des cafés gratuits n'est pas ég
 ##### Consommation
 
 Lorsqu'un client achète un café, il peut décider d'utiliser ou non ses cafés prépayés/gratuits. Les cafés gratuits sont consommés en premier, puis les cafés prépayés.
-Un client peut décider de seulement utiliser un certain nombre de cafés prépayés/gratuits et de payer le reste. Il suffit au caissier d'enregistrer une première opération, puis une seconde.
+Un client peut décider d'utiliser seulement un certain nombre de cafés prépayés/gratuits et de payer le reste. Il suffit au caissier d'enregistrer une première opération, puis une seconde.
 
 #### Annuler une transaction
 
@@ -228,10 +216,10 @@ Il permet d'avoir une certaine flexibilité si de nouvelles règles ou contraint
 
 Pour créer des rapports :
 
-1. Le gérant doit sélectionner les types de transactions et la période de temps.
+1. Le gérant doit sélectionner les types de transactions et la période.
 2. Les paramètres sont validés à l'aide de la classe `RapportForm`.
 3. Une requête récupère les informations associées aux paramètres sélectionnés.
-4. Calcul des quantités (Net = quantitéTotal - annulée).
+4. Les quantités nettes sont calculées en soustrayant les quantités annulées des quantités enregistrées.
 5. Les données sont regroupées dans un objet `Rapport` et les détails par transaction sont dans des objets `EvenementRapport`. Tous ces objets sont en mémoire ; aucun n'est en BD.
 6. La vue transmet un résultat en HTML. Il est possible d'exporter le rapport en Excel grâce à la bibliothèque `openpyxl`.
 
@@ -258,20 +246,21 @@ Pour préserver l'intégrité des données de la `V1`, les champs ajoutés accep
 
 La gestion des succursales se fait à l'aide des modèles `Succursale` et `AffectationEmployeSuccursale`.
 
-Une succursale est constitué de : 
+Une succursale est constituée des attributs suivants :
 
-- **id** : La clé primaire de la succursale 
-- **nom** : Le nom attribué à la succursale
+- **id** : La clé primaire de la succursale.
+- **nom** : Le nom attribué à la succursale.
 
-Le modèle `AffectationEmployeSuccursale` permet de garder trace des lieux de travails de chaque employé. Ce modèle est constitué de : 
+Le modèle `AffectationEmployeSuccursale` permet de garder une trace des lieux de travail de chaque employé. Ce modèle est constitué des attributs suivants :
 
-- **id** : La clé primaire de la relation employé - succursale
-- **employe_id** : Une clé étrangère qui permet de retrouvé l'employé
-- **succursale_id** : Une clé étrangère qui permet de retrouvé la succursale
+- **id** : La clé primaire de la relation entre un employé et une succursale.
+- **employe_id** : Une clé étrangère qui permet de retrouver l'employé.
+- **succursale_id** : Une clé étrangère qui permet de retrouver la succursale.
 
-On peut représenté cette relation entre employé et succursale de cette manière : 
+On peut représenter cette relation entre un employé et une succursale de la manière suivante :
 
-#### Représentation graphieque de la relation employé - succursale
+#### Représentation graphique de la relation employé - succursale
+
 ```mermaid
 erDiagram
     Employe ||--o{ AffectationEmployeSuccursale : "est affecté"
@@ -294,49 +283,51 @@ erDiagram
     }
 ```
 
-
-
-
 ### Gestion des rôles
-Cette relation est entre autre utile pour rendre impossible la consultation ou la gestion d'une succursale qui n'est pas dans le périmètre d'un gérant *quelquonque*. Effectivement, avec l'arrivée de succursales, et du rôle de **Propriétaire**, la gestion des permissions devient plus restrictive. Il faut prendre en compte si l'employé peut ou non accéder au *tableau de bord* de la succursale et plus. Les permissions sont donc réprésemtés par ce tableau : 
+
+Cette relation est, entre autres, utile pour empêcher un gérant de consulter ou de gérer une succursale qui ne fait pas partie de son périmètre. En effet, avec l'arrivée des succursales et du rôle de **Propriétaire**, la gestion des permissions devient plus restrictive. Il faut vérifier si l'employé peut accéder au *tableau de bord* de la succursale et aux autres fonctionnalités. Les permissions sont présentées dans le tableau suivant :
 
 #### Tableau des permissions de Café Dolbeau
-| Fonction                                     | Propriétaire     | Gérant              | Barista                                                        |
-| -------------------------------------------- | ---------------- | ------------------- | -------------------------------------------------------------- |
-| Dix dernières transactions d’un client       | Tout le réseau   | Tout le réseau      | Tout le réseau                                                 |
-| Enregistrer une opération                    | Toute succursale | Ses succursales     | Ses succursales                                                |
-| Annuler une transaction                      | Tout le réseau   | Ses succursales     | Ses propres transactions récentes, dans la succursale active |
-| Liste des transactions dans l’administration | Tout le réseau   | Ses succursales     | Aucun accès                                                    |
-| Rapports et exports, provisoirement          | Tout le réseau        | Ses     succursales | Refusés                                                        |
 
+| Fonction                                    | Propriétaire     | Gérant          | Barista                                                    |
+| ------------------------------------------- | ---------------- | --------------- | ---------------------------------------------------------- |
+| Dix dernières transactions d’un client      | Tout le réseau   | Tout le réseau  | Tout le réseau                                             |
+| Enregistrer une opération                   | Toute succursale | Ses succursales | Ses succursales                                            |
+| Annuler une transaction                     | Tout le réseau   | Ses succursales | Ses propres transactions récentes, dans la succursale active |
+| Liste des transactions dans l’administration | Tout le réseau   | Ses succursales | Aucun accès                                                |
+| Rapports et exports, provisoirement         | Tout le réseau   | Ses succursales | Refusés                                                    |
 
-### Programme de fidélité 
-Le programme de fidélité reste semblable aux versions précédentes à l'exceptions de l'ajout d'une nouvelle catégorie les **promotions**. Les promotions s'ajoutent par dessus le programme standard. Elles sont attribués directements aux succursales participantesé. Les promotions fonctionnes à l'aide des trois modèles suivants : `Promotions`, `PromotionSuccursale` et `CompteurPromotion`.
+### Programme de fidélité
 
-Le modèle `Promotions` est constitué des attributs suivants : 
-- **id** : La clé primaire
-- **nom** : Le nom donnée à la promotion
-- **cafe_pour_gratuite** : Le nombre de café pour en avoir un gratuit pendant la promotion
-- **date_debut** : La date de début de la promotion
-- **date_fin** : La date de fin de la promotion
-- **annulee_le** : La date d'annulation de la promotion (nulle si non annulée)
-- **annulee_par** : L'identifiant de l'employé qui a annulé la promotion (nulle si non annulée)
-- **motif_annulation** : Le motif de l'annulation ex. La compagnie partenaire est associé avec XQC (guillement vide si non annulée)
+Le programme de fidélité reste semblable à celui des versions précédentes, à l'exception de l'ajout d'une nouvelle catégorie : les **promotions**. Les promotions s'ajoutent au programme standard. Elles sont attribuées directement aux succursales participantes. Les promotions fonctionnent à l'aide des trois modèles suivants : `Promotions`, `PromotionSuccursale` et `CompteurPromotion`.
 
-Pour assigner les promotions aux succursales le modèle `PromotionSuccursale` est utilisé. Ce modèle est constitué des attributs suivants : 
+Le modèle `Promotions` est constitué des attributs suivants :
+
 - **id** : La clé primaire.
-- **id_promotion** : Une clé étrangère qui réfère à la promotion.
-- **id_succursale** : Une clé étrangère qui réfère à la succursale participante.  
+- **nom** : Le nom donné à la promotion.
+- **cafe_pour_gratuite** : Le nombre de cafés à acheter pour en obtenir un gratuit pendant la promotion.
+- **date_debut** : La date de début de la promotion.
+- **date_fin** : La date de fin de la promotion.
+- **annulee_le** : La date d'annulation de la promotion (`NULL` si elle n'est pas annulée).
+- **annulee_par** : L'identifiant de l'employé qui a annulé la promotion (`NULL` si elle n'est pas annulée).
+- **motif_annulation** : Le motif de l'annulation, par exemple : « La compagnie partenaire est associée à XQC » (chaîne vide si aucun motif n'est renseigné).
 
-Lorsqu'une promotion est assignée à une succursale, elle ne peut pas être retiré pour une succursale unique au milieu de sa durée. Ce choix a été fait pour éviter certaines confusions chez les clients. Alors soit on l'anulle pour tous ou on ne l'annulle pas. Dans quel, le propriétaire qui l'a annulé est enregistré avec la date de l'annulation et le motif. 
+Pour affecter les promotions aux succursales, le modèle `PromotionSuccursale` est utilisé. Ce modèle est constitué des attributs suivants :
 
-Chaque promotion à son propre compteur indépendant du compteur de base des cafés gratuits. Pour faire le lien avec les clients, le modèle `CompteurPromotion` est utilisé. Ce modèle est constitué des attributs suivants : 
-- **id** : La clé primaire
-- **id_promotion** : Une clé étrangère qui réfère à la promotion.
-- **id_client** : Une clé étrangère qui réfère au client.
+- **id** : La clé primaire.
+- **id_promotion** : Une clé étrangère qui fait référence à la promotion.
+- **id_succursale** : Une clé étrangère qui fait référence à la succursale participante.
 
-De cette manière un même client peut profiter de la même promotion dans les différentes succursales participantes et des différentes promotions en même temps. 
+Lorsqu'une promotion est affectée à une succursale, elle ne peut pas être retirée d'une seule succursale pendant sa période de validité. Ce choix a été fait pour éviter certaines confusions chez les clients. Soit on l'annule pour toutes les succursales, soit on ne l'annule pas. En cas d'annulation, le propriétaire qui l'a annulée est enregistré, ainsi que la date et le motif de l'annulation.
 
+Chaque promotion a son propre compteur, indépendant du compteur de base des cafés gratuits. Pour faire le lien avec les clients, le modèle `CompteurPromotion` est utilisé. Ce modèle est constitué des attributs suivants :
+
+- **id** : La clé primaire.
+- **id_promotion** : Une clé étrangère qui fait référence à la promotion.
+- **id_client** : Une clé étrangère qui fait référence au client.
+
+De cette manière, un même client peut profiter de la même promotion dans les différentes succursales participantes et de plusieurs promotions en même temps.
 
 ### Les rapports
-La gestion des rapports se fait avec une section supplémentaire, la sélection des succursales. Un gérant à accès aux succursales dans son périmètre et les propriétaires à toutes les succursales. Dans le rapport on divise la synthèse avec les succursales sélectionnées de même pour les détails. 
+
+La gestion des rapports comprend une section supplémentaire : la sélection des succursales. Un gérant a accès aux succursales de son périmètre, tandis qu'un propriétaire a accès à toutes les succursales. Dans le rapport, la synthèse et le détail des totaux sont présentés séparément pour chaque succursale sélectionnée, puis pour l'ensemble de la sélection.
