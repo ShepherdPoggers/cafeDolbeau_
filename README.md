@@ -63,6 +63,28 @@ succursale sélectionnée séparément, puis le global de la sélection. Les mê
 sections sont disponibles dans l’export Excel, y compris pour les succursales
 sans activité.
 
+## Consulter les soldes V3
+
+Depuis la racine, pour tout le réseau :
+
+```bash
+docker compose exec app python src/manage.py balances
+```
+
+Pour une succursale, ou plusieurs succursales sélectionnées :
+
+```bash
+docker compose exec app python src/manage.py balances --succursale 1
+docker compose exec app python src/manage.py balances --succursale 1 --succursale 2
+```
+
+Le filtre retient les clients ayant des transactions dans au moins une des
+succursales choisies, y compris des transactions annulées. Chaque client apparaît
+une seule fois avec ses **soldes globaux**, puisque sa fidélité est commune au
+réseau. Les clients sans transaction apparaissent seulement dans la sortie
+globale. Une succursale inexistante provoque une erreur sans produire de CSV.
+Le format CSV reste identique pour comparer les soldes avant et après migration.
+
 ## Données de démonstration V3
 
 Après le démarrage de la V3 et l’application des migrations, charger les données
@@ -165,7 +187,7 @@ Le groupe Gérant possède aussi les permissions Django `add_client`, `view_clie
 
 La connexion se fait sur [http://127.0.0.1:8000/connexion/](http://127.0.0.1:8000/connexion/). L’administration est accessible aux Gérants, Propriétaires et superutilisateurs sur [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/).
 
-Les pages de caisse utilisent `/succursales/1/`, `/succursales/2/` et `/succursales/3/`. La page `/` présente les succursales autorisées. L’historique client affiche les dix dernières transactions de tout le réseau; les soldes et la fidélité sont communs. Le Propriétaire accède aussi à la nº 3 et à toute future succursale. Pour une base existante, consulter la [migration des rôles et affectations](docs/migration.md#ajouter-le-propriétaire-et-les-affectations).
+Les pages de caisse utilisent `/succursales/1/`, `/succursales/2/` et `/succursales/3/`. La page `/` présente les succursales autorisées. L’historique client affiche les dix dernières transactions de tout le réseau; les soldes et la fidélité sont communs. Le Propriétaire accède aussi à la nº 3 et à toute future succursale. Pour une base existante, consulter la [migration des rôles et affectations](docs/migration.md#7-mettre-la-v3-en-service).
 
 ### Données disponibles
 
@@ -219,7 +241,7 @@ Pour transférer une ancienne base SQLite vers PostgreSQL, le script s’occupe 
 python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
 ```
 
-Il met à jour une copie temporaire de SQLite et conserve le fichier original. PostgreSQL peut être vide ou déjà initialisé par `manage.py migrate`, avec uniquement ses valeurs initiales. Tout écrasement de données existantes est refusé. Voir la [procédure de transfert](docs/migration.md#transférer-sqlite-vers-postgresql).
+Il met à jour une copie temporaire de SQLite et conserve le fichier original. PostgreSQL peut être vide ou déjà initialisé par `manage.py migrate`, avec uniquement ses valeurs initiales. Tout écrasement de données existantes est refusé. Voir la [procédure de transfert](docs/migration.md#5-transférer-le-sqlite-v2-en-lecture-seule).
 
 La base SQLite de démonstration se trouve dans **`src/db.sqlite3`**. La base PostgreSQL est configurée par les variables `POSTGRES_*` du fichier `.env`. La commande `migrate` crée la base et ses tables si elles n’existent pas, ou applique les migrations manquantes. Elle doit être exécutée avant la première utilisation.
 

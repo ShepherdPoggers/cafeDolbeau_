@@ -83,10 +83,16 @@ for utilisateur in Employe.objects.filter(username__in=['gerant_test', 'barista2
 
     def ancien_schema_source(self):
         subprocess.run(
-            [sys.executable, str(RACINE / "src/manage.py"), "migrate", "CafeDolbeau", "0016", "--noinput"],
+            [sys.executable, str(RACINE / "src/manage.py"), "migrate", "CafeDolbeau", "0016_fusions_sans_noms_compat_postgresql", "--noinput"],
             env={**os.environ, "CAFE_DB_ENGINE": "sqlite", "CAFE_DB_PATH": str(self.source)},
             cwd=RACINE, check=True, capture_output=True, text=True,
         )
+        # Une véritable base V2 connaît 0016, mais pas le remplacement ajouté en V3.
+        with sqlite3.connect(self.source) as source:
+            source.execute(
+                "DELETE FROM django_migrations WHERE app = ? AND name = ?",
+                ("CafeDolbeau", "0016_fusions_sans_noms_compat_postgresql"),
+            )
 
     def instantane_destination(self):
         return script["normaliser"](script["exporter"]("default"))

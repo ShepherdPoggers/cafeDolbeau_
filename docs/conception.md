@@ -19,16 +19,16 @@
     - [Paramètres des cafés gratuits](#paramètres-des-cafés-gratuits)
     - [Création des rapports](#création-des-rapports)
     - [Gestion des permissions](#gestion-des-permissions)
+    - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
+        - [Représentation graphique de la relation employé - succursale](#représentation-graphique-de-la-relation-employé---succursale)
+      - [Gestion des rôles](#gestion-des-rôles)
+        - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
+      - [Programme de fidélité](#programme-de-fidélité)
+      - [Les rapports](#les-rapports)
     - [Choix techniques](#choix-techniques)
       - [Centralisation de la logique métier](#centralisation-de-la-logique-métier)
       - [Cohérence des données](#cohérence-des-données)
       - [Migration des données](#migration-des-données)
-  - [Gestion des différentes succursales](#gestion-des-différentes-succursales)
-      - [Représentation graphique de la relation employé - succursale](#représentation-graphique-de-la-relation-employé---succursale)
-    - [Gestion des rôles](#gestion-des-rôles)
-      - [Tableau des permissions de Café Dolbeau](#tableau-des-permissions-de-café-dolbeau)
-    - [Programme de fidélité](#programme-de-fidélité)
-    - [Les rapports](#les-rapports)
 
 ## Implémentation
 
@@ -225,24 +225,38 @@ Pour créer des rapports :
 
 ### Gestion des permissions
 
-Il y a deux rôles pour gérer les permissions : `barista` et `gérant`. Les permissions attribuées à ceux-ci sont respectivement `acces_base` et `acces_gerant`. Deux décorateurs de fonction sont utilisés pour valider les permissions de l'utilisateur : `@acces_base_requis` et `@gerant_requis`. Ces décorateurs sont placés au-dessus des différentes `views`. Lorsque certaines permissions sont demandées dans la page d'administration, des fonctions telles que `has_delete_permission` ou `has_add_permission` sont appelées. Cela permettra une modularité future des permissions ; par exemple, seul un **SUPERGÉRANT** pourrait modifier la règle du café gratuit.
+Trois rôles applicatifs sont définis à l’aide des groupes et des permissions Django :
 
-### Choix techniques
+| Rôle | Permissions applicatives principales | Périmètre |
+| --- | --- | --- |
+| Barista | `acces_base` | Les succursales auxquelles il est affecté. |
+| Gérant | `acces_base`, `acces_gerant` | Ses succursales pour les opérations, les annulations et les rapports. |
+| Propriétaire | `acces_base`, `acces_gerant`, `acces_proprietaire` | Toutes les succursales, y compris celles créées ultérieurement, sans affectation nécessaire. |
 
-#### Centralisation de la logique métier
+Les décorateurs `@acces_base_requis`, `@gerant_requis` et `@proprietaire_requis`
+protègent les vues selon le rôle. Pour les pages de caisse, `@succursale_requise`
+vérifie aussi la succursale indiquée dans l’URL. Les fonctions
+`succursales_autorisees` et `verifier_acces_succursale`, dans
+[permissions.py](../src/CafeDolbeau/permissions.py), centralisent ce contrôle.
 
-Les opérations sur les cafés, les annulations, les suppressions et les fusions sont centralisées dans [services.py](src/CafeDolbeau/services.py).
+Les vérifications sont effectuées côté serveur. Le formulaire de connexion
+refuse un employé sans accès à la succursale mémorisée pour la caisse. Les
+services revérifient ses droits avant l’enregistrement, et les rapports avant
+leur génération, afin de tenir compte d’un retrait d’affectation.
 
-#### Cohérence des données
+Dans l’administration, les méthodes comme `has_add_permission` et
+`has_delete_permission`, les requêtes filtrées et les validations des formulaires
+limitent les actions et les données accessibles. Le Propriétaire gère les
+succursales, les comptes applicatifs, leurs rôles et leurs affectations. Un
+Gérant ne peut créer que des Baristas et gérer leurs affectations dans son
+périmètre. La fiche client reste commune au réseau, comme expliqué dans
+l’[ADR-0010](adr/0010-ROLES.md).
 
-Les opérations qui modifient plusieurs données utilisent la fonction `_avec_clients_verrouilles`. Celle-ci utilise `transaction.atomic()` pour garantir que toutes les données sont enregistrées ou que l'opération est complètement annulée. Cela évite de modifier les compteurs d'un client sans enregistrer la transaction correspondante.
+Le Propriétaire est distinct du superutilisateur Django : il ne peut ni gérer
+les comptes superutilisateurs ni modifier les privilèges techniques. Le premier
+Propriétaire est désigné par un superutilisateur.
 
-
-#### Migration des données
-
-Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.
-
-## Gestion des différentes succursales
+### Gestion des différentes succursales
 
 La gestion des succursales se fait à l'aide des modèles `Succursale` et `AffectationEmployeSuccursale`.
 
@@ -259,7 +273,7 @@ Le modèle `AffectationEmployeSuccursale` permet de garder une trace des lieux d
 
 On peut représenter cette relation entre un employé et une succursale de la manière suivante :
 
-#### Représentation graphique de la relation employé - succursale
+##### Représentation graphique de la relation employé - succursale
 
 ```mermaid
 erDiagram
@@ -282,12 +296,11 @@ erDiagram
         bigint succursale_id FK
     }
 ```
+#### Gestion des rôles
 
-### Gestion des rôles
+Cette relation est, entre autres, utile pour empêcher un gérant de consulter ou de gérer une succursale qui ne fait pas partie de son périmètre. En effet, avec l'arrivée des succursales et du rôle de **Propriétaire**, la gestion des permissions devient plus restrictive. Il faut vérifier si l'employé peut accéder au *tableau de bord* de la succursale et aux autres fonctionnalités. 
 
-Cette relation est, entre autres, utile pour empêcher un gérant de consulter ou de gérer une succursale qui ne fait pas partie de son périmètre. En effet, avec l'arrivée des succursales et du rôle de **Propriétaire**, la gestion des permissions devient plus restrictive. Il faut vérifier si l'employé peut accéder au *tableau de bord* de la succursale et aux autres fonctionnalités. Les permissions sont présentées dans le tableau suivant :
-
-#### Tableau des permissions de Café Dolbeau
+##### Tableau des permissions de Café Dolbeau
 
 | Fonction                                    | Propriétaire     | Gérant          | Barista                                                    |
 | ------------------------------------------- | ---------------- | --------------- | ---------------------------------------------------------- |
@@ -297,7 +310,7 @@ Cette relation est, entre autres, utile pour empêcher un gérant de consulter o
 | Liste des transactions dans l’administration | Tout le réseau   | Ses succursales | Aucun accès                                                |
 | Rapports et exports, provisoirement         | Tout le réseau   | Ses succursales | Refusés                                                    |
 
-### Programme de fidélité
+#### Programme de fidélité
 
 Le programme de fidélité reste semblable à celui des versions précédentes, à l'exception de l'ajout d'une nouvelle catégorie : les **promotions**. Les promotions s'ajoutent au programme standard. Elles sont attribuées directement aux succursales participantes. Les promotions fonctionnent à l'aide des trois modèles suivants : `Promotions`, `PromotionSuccursale` et `CompteurPromotion`.
 
@@ -328,6 +341,22 @@ Chaque promotion a son propre compteur, indépendant du compteur de base des caf
 
 De cette manière, un même client peut profiter de la même promotion dans les différentes succursales participantes et de plusieurs promotions en même temps.
 
-### Les rapports
+#### Les rapports
 
 La gestion des rapports comprend une section supplémentaire : la sélection des succursales. Un gérant a accès aux succursales de son périmètre, tandis qu'un propriétaire a accès à toutes les succursales. Dans le rapport, la synthèse et le détail des totaux sont présentés séparément pour chaque succursale sélectionnée, puis pour l'ensemble de la sélection.
+
+
+### Choix techniques
+
+#### Centralisation de la logique métier
+
+Les opérations sur les cafés, les annulations, les suppressions et les fusions sont centralisées dans [services.py](src/CafeDolbeau/services.py).
+
+#### Cohérence des données
+
+Les opérations qui modifient plusieurs données utilisent la fonction `_avec_clients_verrouilles`. Celle-ci utilise `transaction.atomic()` pour garantir que toutes les données sont enregistrées ou que l'opération est complètement annulée. Cela évite de modifier les compteurs d'un client sans enregistrer la transaction correspondante.
+
+
+#### Migration des données
+
+Pour préserver l'intégrité des données de la `V1`, les champs ajoutés acceptent la valeur `NULL`. Les opérations qui nécessitent ces champs ajoutés se font manuellement pour les lignes qui datent de la `V1`.

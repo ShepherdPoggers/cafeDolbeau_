@@ -1,106 +1,64 @@
 # Migrer les données de la V1 vers la V2
 
-## Conservation des données
+Exécuter les commandes à la racine du projet, avec l’environnement virtuel activé.
+Conserver le même fichier SQLite pendant le passage à la V2.
 
-Les migrations V1 `0001` à `0008` sont identiques à celles des tags existants, dont `v1.0.0.4`. La V2 applique ensuite les migrations `0009` à `0016` sans supprimer les clients ni recalculer leurs soldes.
+## 1. Sauvegarder la V1
 
-Les trois compteurs de `Client` conservent leur forme et leurs valeurs :
-
-| Donnée | Champ conservé |
-| --- | --- |
-| Achats cumulés servant au calcul des étampes | `nombre_cafes_achetes` |
-| Récompenses en réserve | `nombre_cafes_gratuits` |
-| Cafés restants sur les cartes prépayées | `nombre_cafes_prepayes` |
-
-Les étampes vers la prochaine récompense correspondent à `nombre_cafes_achetes % seuil`. Le seuil est de 10 en V1 et reste à 10 après les migrations V2. La commande V2 `python src/manage.py balances` affiche ces étampes et les trois compteurs.
-
-Aucune reconstitution des soldes n’est nécessaire. Les informations d’audit absentes de la V1 restent inconnues, comme expliqué dans l’[ADR-0008](adr/0008-MIGRATION_V1.md).
-
-## Mettre à jour une base existante
-
-1. Arrêter le serveur V1 et sauvegarder `src/db.sqlite3` ainsi que le code V1.
-2. Avec le code V1 et l’environnement virtuel activé, enregistrer les clients avant la mise à jour :
-
-   ```bash
-   python src/manage.py dumpdata CafeDolbeau.Client --indent 2 --output clients-v1.json
-   ```
-
-3. Récupérer le code V2 en conservant **le même fichier `src/db.sqlite3`**. Si `CAFE_DB_PATH` est défini en V2, vérifier qu’il désigne cette base.
-4. Depuis la racine du dépôt, mettre à jour les dépendances et appliquer les migrations :
-
-   ```bash
-   python -m pip install -r requirements.txt
-   python src/manage.py migrate
-   python src/manage.py check
-   python src/manage.py showmigrations
-   python src/manage.py balances
-   ```
-
-5. Comparer les soldes affichés avec les compteurs enregistrés dans `clients-v1.json`.
-6. Avec un superutilisateur existant, attribuer les groupes Barista ou Gérant aux anciens employés. Leurs comptes et mots de passe sont conservés, mais les groupes ne leur sont pas attribués automatiquement.
-7. Vérifier l’historique et les accès, puis relancer le serveur.
-
-Sous Windows PowerShell, remplacer `python` par `.\.venv\Scripts\python.exe`. Pour préparer l’environnement virtuel, voir le [README](../README.md#prérequis).
-
-En cas d’échec, restaurer la sauvegarde de la base avec le code V1. Le chargement de données de démonstration ne fait pas partie de la mise à jour d’une base existante.
-
-## Reproduire la vérification avec les données de démonstration V1
-
-Depuis le code V2, préparer l’environnement virtuel et les dépendances selon le README. Exécuter les commandes à la racine du dépôt, dans le même terminal. Le fichier `src/db.sqlite3` doit être absent : le script refuse d’écraser une base existante.
-
-### 1. Créer la base de démonstration V1
+Arrêter le serveur et conserver une copie du code V1. Sauvegarder la base :
 
 ```bash
-python scripts/donnees_v1.py --database src/db.sqlite3
+python -c "import sqlite3; source = sqlite3.connect('file:src/db.sqlite3?mode=ro', uri=True); copie = sqlite3.connect('db-v1-sauvegarde.sqlite3'); source.backup(copie); copie.close(); source.close()"
+python src/manage.py dumpdata CafeDolbeau.Client --indent 2 --output clients-v1.json
 ```
 
-Le script applique uniquement les migrations V1 `0001` à `0008`, charge 6 clients et 12 transactions, puis affiche leurs soldes avant migration. Il crée aussi les comptes de démonstration avec le mot de passe `CafeTest-2026!`, dont le superutilisateur `admin_test`.
+Choisir un autre nom de sauvegarde si le fichier existe déjà.
 
-Les clients, leurs soldes et leurs transactions sont définis directement dans le script. Ils reprennent le jeu de démonstration validé avec les services du tag V1 `v1.0.0.4`. Le script utilise les modèles historiques V1 pour les créer ; il ne crée pas les colonnes ni les tables V2.
+## 2. Installer la V2
 
-### 2. Migrer normalement vers la V2
+Récupérer le code V2 en conservant `src/db.sqlite3`, puis exécuter :
 
 ```bash
+python -m pip install -r requirements.txt
 python src/manage.py migrate
 python src/manage.py check
 python src/manage.py balances
 ```
 
-Comparer les soldes affichés avec ceux du script : ils doivent être identiques au tableau ci-dessous. Le même fichier `src/db.sqlite3` est conservé et aucune donnée n’est rechargée. Après la migration, utiliser `admin_test` pour attribuer les rôles Barista ou Gérant aux autres comptes.
+Si `CAFE_DB_PATH` est défini, vérifier qu’il désigne bien la base conservée.
 
-## Charger les données avec uniquement le code V1
+## 3. Vérifier et remettre en service
 
-Le correcteur qui a téléchargé directement la V1 peut charger le jeu de données de `donnees_v1.py` **sans installer ni exécuter la V2**. Le fichier doit lui être fourni séparément ou être joint à l'archive V1 ; un ancien tag ne contient pas automatiquement ce script ajouté ultérieurement.
+Comparer les soldes avec les valeurs de `clients-v1.json`. Avec un
+superutilisateur existant, attribuer les groupes Barista ou Gérant aux anciens
+employés dans l’administration. Vérifier les accès et l’historique, puis relancer :
 
-Copier uniquement `donnees_v1.py` dans un dossier `scripts` à la racine du projet V1, au même niveau que `src`. La fonction `creer_donnees` est autonome : son import ne lance pas le script et ne nécessite pas `_donnees_test.py`. Elle utilise les modèles V1 de l'application déjà chargée par Django.
-
-Arrêter le serveur, préparer l'environnement et installer les dépendances de la V1 selon son README. Utiliser une copie de travail V1 avec une base neuve : sauvegarder et déplacer tout fichier `src/db.sqlite3` existant avant de continuer. Le chargement ci-dessous utilise des identifiants fixes et doit être effectué une seule fois sur une base sans clients ni transactions.
-
-Depuis la racine de cette copie V1, dans PowerShell :
-
-```powershell
-# Créer les tables avec les migrations disponibles dans la V1.
-.\.venv\Scripts\python.exe src/manage.py migrate
-
-# Charger les 6 clients et les 12 transactions dans une transaction atomique.
-.\.venv\Scripts\python.exe src/manage.py shell -c "import sys; sys.path.insert(0, 'scripts'); from donnees_v1 import creer_donnees; from django.apps import apps; from django.db import transaction; transaction.atomic()(creer_donnees)(apps)"
-
-# Facultatif : créer un compte pour consulter l'administration V1.
-.\.venv\Scripts\python.exe src/manage.py createsuperuser
-
-.\.venv\Scripts\python.exe src/manage.py runserver
+```bash
+python src/manage.py runserver
 ```
 
-Cette méthode charge uniquement les clients et les transactions ; elle ne crée pas les comptes de démonstration. Le compte d'administration et son mot de passe sont ceux choisis avec `createsuperuser`. Sous un autre système, remplacer `.\.venv\Scripts\python.exe` par l'interpréteur de l'environnement virtuel activé.
+Sous PowerShell, remplacer `python` par `.\.venv\Scripts\python.exe`.
+En cas d’échec, arrêter la V2 et reprendre le code V1 avec la sauvegarde SQLite.
+Ne pas charger de données de démonstration dans la base existante.
 
-Ne pas lancer directement `python scripts/donnees_v1.py --database ...` dans cette procédure : ce point d'entrée dépend du fichier auxiliaire et du réglage `CAFE_DB_PATH` de la V2. Le passage par `manage.py shell` utilise la configuration de base de données propre à la V1.
+## Reproduire la vérification avec les données de démonstration V1
 
-Les soldes attendus figurent dans le tableau ci-dessous. Pour tester ensuite la mise à jour, arrêter le serveur et suivre la section « Mettre à jour une base existante » en conservant cette base.
+Dans une copie du code V2, avec les dépendances installées et sans fichier
+`src/db.sqlite3` existant :
 
-## Résultat de notre vérification
+```bash
+python scripts/donnees_v1.py --database src/db.sqlite3
+python src/manage.py migrate
+python src/manage.py check
+python src/manage.py balances
+```
 
-Essai effectué le 18 octobre 2026 : base créée au schéma V1 avec `scripts/donnees_v1.py`, puis migrations V2 appliquées sur ce même fichier SQLite. Les migrations `0009` à `0016` et `check` ont réussi. Les achats cumulés, récompenses et prépayés sont identiques pour les 6 clients ; les étampes calculées le sont également.
+Comparer les soldes avec ceux affichés par le script avant la mise à jour.
 
+## Résultat de notre vérification V1 → V2
+
+Essai effectué le **18 octobre 2026** : les soldes des six clients et les
+12 transactions sont conservés, ainsi que les cinq comptes de démonstration.
 Chaque cellule indique **avant / après** :
 
 | Client | Achats cumulés | Étampes | Récompenses en réserve | Cafés prépayés restants |
@@ -112,124 +70,75 @@ Chaque cellule indique **avant / après** :
 | Élodie Simard | 33 / 33 | 3 / 3 | 1 / 1 | 10 / 10 |
 | Client sans solde | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 
-Sortie de `balances` après la migration, identique à l’export CSV des mêmes valeurs avant la migration :
-
-```csv
-id,client,cafes_achetes,etampes,recompenses_en_reserve,cafes_prepayes
-1,Alice Tremblay,9,9,0,0
-2,Benoît Gagnon,12,2,1,0
-3,Camille Roy,20,0,0,17
-4,Dominique Fortin,17,7,0,10
-5,Élodie Simard,33,3,1,10
-6,Client sans solde,0,0,0,0
-```
-
-Les 12 transactions existantes conservent leurs identifiants, clients, types, quantités et dates. Les 5 comptes de démonstration conservent aussi leurs identifiants, mots de passe et états. Le script refuse une seconde exécution sur la même base sans la modifier.
-
-La conservation des soldes et de l’historique a également été vérifiée avec une base créée par le code du tag `v1.0.0.4`. Les fichiers des migrations V1 ont été comparés à ceux des cinq tags V1 : aucune différence.
-
 # Migrer les données de la V2 vers la V3
 
-La V2 utilise le fichier SQLite `src/db.sqlite3`. La V3 utilise PostgreSQL pour
-l’exploitation. Le transfert s’effectue une seule fois avec
-`scripts/migrer_sqlite_vers_postgres.py` : ce script crée le schéma PostgreSQL,
-applique les migrations nécessaires et transfère les données. Il n’est pas
-nécessaire de migrer manuellement le fichier SQLite avant l’importation.
+Toutes les commandes partent de la racine du projet. La base SQLite V2 sera
+transférée dans PostgreSQL ; conserver son fichier original et sa sauvegarde.
 
-Toutes les commandes ci-dessous s’exécutent **à la racine du dépôt**, dans le
-dossier contenant `src/`, `scripts/`, `docker/compose.yaml` et `requirements.txt`.
+## 1. Sauvegarder la V2 et noter les soldes
 
-## 1. Arrêter la V2 et sauvegarder les données
+Avec le code et la configuration V2, arrêter le serveur et toute application
+qui écrit dans SQLite. Conserver une copie du code V2, puis exécuter :
 
-1. Arrêter le serveur Django V2 et toute autre application qui écrit dans SQLite.
-2. Conserver une copie du code et de la configuration V2 pour pouvoir revenir à
-   cette version si nécessaire.
-3. Avec Python disponible, sauvegarder la base V2 existante. Choisir un autre nom
-   si `db-v2-sauvegarde.sqlite3` existe déjà :
+```bash
+python -c "import sqlite3; source = sqlite3.connect('file:src/db.sqlite3?mode=ro', uri=True); copie = sqlite3.connect('db-v2-sauvegarde.sqlite3'); source.backup(copie); copie.close(); source.close()"
+python src/manage.py balances > balances-v2.csv
+```
 
-   ```bash
-   python -c "import sqlite3; source = sqlite3.connect('file:src/db.sqlite3?mode=ro', uri=True); copie = sqlite3.connect('db-v2-sauvegarde.sqlite3'); source.backup(copie); copie.close(); source.close()"
-   ```
+Choisir un autre nom de sauvegarde si le fichier existe déjà. Conserver aussi
+`balances-v2.csv` pour la comparaison finale.
 
-   Cette sauvegarde inclut les données du journal WAL, s’il existe. Le fichier
-   source est ouvert en lecture seule.
-
-4. Avant de remplacer le code V2, enregistrer les soldes avec sa configuration
-   SQLite habituelle pour pouvoir les comparer après le transfert :
-
-   ```bash
-   python src/manage.py balances > balances-v2.csv
-   ```
-
-## 2. Installer le code V3 et préparer les secrets
+## 2. Installer le code V3
 
 Installer Docker et Docker Compose avec Buildx, puis récupérer le code V3 en
-conservant le fichier SQLite V2. Dans cette procédure, son chemin reste
-`src/db.sqlite3`. Toutes les commandes suivantes partent de la racine du dépôt.
+conservant le SQLite V2 à l’emplacement `src/db.sqlite3`.
 
-Pour une nouvelle configuration :
+Si aucun `.env` n’existe, le créer :
 
 ```bash
 cp .env.example .env
 ```
 
 Sous PowerShell, utiliser `Copy-Item .env.example .env`. Si `.env` existe déjà,
-le conserver et compléter les variables manquantes, dont
-`COMPOSE_FILE=docker/compose.yaml`, à partir de `.env.example`. Les secrets vides
-sont générés automatiquement dans un volume persistant au démarrage de Compose,
-comme décrit dans le
-[guide de déploiement](deploiement.md#installation-neuve).
+le conserver et compléter les variables manquantes à partir de `.env.example`,
+notamment `COMPOSE_FILE=docker/compose.yaml`. Conserver les secrets d’une
+installation PostgreSQL existante.
 
-## 3. Configurer la destination PostgreSQL
+## 3. Préparer la destination PostgreSQL
 
-Vérifier les valeurs suivantes dans `.env` :
+Vérifier dans `.env` le nom de la base et du compte PostgreSQL :
 
 ```dotenv
 POSTGRES_DB=cafe_dolbeau
 POSTGRES_USER=cafe_dolbeau
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-CAFE_DB_ENGINE=postgresql
-HTTP_PORT=8000
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 ```
 
-`SECRET_KEY` et `POSTGRES_PASSWORD` peuvent rester vides pour une installation
-neuve : Compose les génère dans le volume `runtime_secrets`. Pour une base
-existante, conserver les valeurs déjà configurées.
-La destination doit être vide ou contenir uniquement les valeurs initiales des
-migrations. Ne pas y créer de compte ni y charger de données avant l’import.
+Pour une installation neuve, `SECRET_KEY` et `POSTGRES_PASSWORD` peuvent rester
+vides : ils sont générés au démarrage. Les autres valeurs par défaut conviennent
+pour une utilisation sur `http://localhost:8000`.
 
-Compose utilise le nom interne `db` pour PostgreSQL. Son port n’est pas publié sur
-l’ordinateur : le transfert s’exécute dans un conteneur du réseau interne.
-Le fichier source est choisi par `--source`, indépendamment de `CAFE_DB_PATH`.
-Les variables exportées dans le terminal sont prioritaires sur `.env` ; vérifier
-qu’elles ne pointent pas vers une autre base. Le mot de passe d’un volume déjà
-initialisé ne change pas simplement en modifiant `.env`.
+Utiliser une destination vide ou initialisée uniquement par le démarrage V3.
+**Ne pas créer de compte ni charger les données de démonstration V3 avant
+l’import.** Si une base PostgreSQL contient déjà des données, choisir une autre
+destination ; l’import refuse de les écraser. Changer `POSTGRES_DB` ne crée pas
+une nouvelle base dans un volume PostgreSQL déjà initialisé.
 
-## 4. Construire et démarrer la pile V3
+## 4. Démarrer les conteneurs
 
 ```bash
-docker compose up --build -d
+docker compose up --build --detach --wait
 docker compose ps -a
 ```
 
-La pile démarre PostgreSQL, applique les migrations dans le service `init`,
-collecte les fichiers statiques, puis démarre Gunicorn et nginx. Le service `init`
-doit se terminer avec le code `0` ; les services permanents deviennent `healthy`.
+Attendre que `db`, `app` et `proxy` soient sains. Les services `init` et `secrets`
+doivent être terminés avec le code `0`. En cas d’échec, consulter
+`docker compose logs` et corriger l’erreur avant de continuer.
 
-Il est normal que le schéma PostgreSQL existe déjà avant le transfert : le script
-accepte cet état initial. Ne pas créer de superutilisateur maintenant. Arrêter
-les accès applicatifs avant l’import, en laissant PostgreSQL actif :
+Arrêter les accès à l’application pendant le transfert, en laissant la base active :
 
 ```bash
 docker compose stop proxy app
 ```
-
-En cas de problème, consulter `docker compose logs`. Une erreur de construction
-mentionnant un plugin `docker-buildx` absent demande de réparer l’installation
-Docker de l’ordinateur.
 
 ## 5. Transférer le SQLite V2 en lecture seule
 
@@ -245,47 +154,32 @@ Sous Windows PowerShell :
 docker compose run --rm --no-deps -v "${PWD}/src:/import:ro" app python scripts/migrer_sqlite_vers_postgres.py --source /import/db.sqlite3
 ```
 
-Adapter le répertoire monté si le SQLite V2 est ailleurs. Monter le répertoire
-permet d’inclure les éventuels fichiers `db.sqlite3-wal` et `db.sqlite3-shm`.
-Le montage est en lecture seule. Sous Linux, si le fichier n’est lisible que par
-son propriétaire, ajouter `--user "$(id -u):$(id -g)"` à la commande `run`.
+Adapter le répertoire monté si le SQLite V2 se trouve ailleurs. Le dossier entier
+est monté pour inclure les éventuels fichiers SQLite `-wal` et `-shm`.
+Sous Linux, si le fichier n’est lisible que par son propriétaire, ajouter
+`--user "$(id -u):$(id -g)"` à la commande `run`.
 
-**Cette commande réalise le transfert et les migrations nécessaires.** Le script
-prend un instantané cohérent de SQLite et applique les migrations manquantes
-uniquement sur cette copie temporaire. Le SQLite original reste inchangé.
+Attendre le message **`Transfert vérifié`**, suivi des nombres de clients,
+transactions et comptes, puis de **`SQLite conservé`**. Le fichier source reste
+inchangé. Une seconde importation dans la même destination est refusée.
 
-Il conserve les identifiants, mots de passe, états d’activation et rôles : un
-Barista reste Barista, un Gérant reste Gérant et un compte sans rôle reste sans
-rôle. Les clients, leurs soldes, les dates et quantités des transactions, les
-annulations et les fusions sont conservés. L’historique V2 est rattaché à la
-succursale nº 1 ; les Baristas et Gérants existants y sont affectés. Aucun compte
-n’est automatiquement promu Propriétaire.
+Ne pas appliquer manuellement de mise à jour au SQLite V2. Aucun `migrate`
+supplémentaire n’est nécessaire pour terminer ce transfert.
 
-L’import est transactionnel, vérifie les données et ajuste les séquences
-PostgreSQL. En cas d’erreur, la destination retrouve son état précédent. Une
-réussite affiche `Transfert vérifié`, les nombres de clients, transactions et
-comptes, puis `SQLite conservé`.
-
-Si la destination contient déjà des comptes, clients, transactions, paramètres
-personnalisés ou tables étrangères, le script refuse le transfert sans les
-effacer. Choisir alors une base vide. Une seconde exécution après un transfert
-réussi est aussi refusée. Changer `POSTGRES_DB` dans `.env` ne crée pas à lui seul
-une nouvelle base dans un volume PostgreSQL déjà initialisé.
-
-## 6. Vérifier les données et les accès
+## 6. Comparer les données
 
 ```bash
 docker compose run --rm --no-deps app python src/manage.py check
-docker compose run --rm --no-deps app python src/manage.py showmigrations
 docker compose run --rm --no-deps app python src/manage.py balances > balances-v3.csv
 ```
 
-Les migrations doivent être marquées `[X]`. Comparer `balances-v3.csv` avec
-`balances-v2.csv`. Aucun `migrate` supplémentaire n’est nécessaire après un
-transfert réussi.
+Comparer `balances-v2.csv` et `balances-v3.csv` : tous les soldes doivent être
+identiques. Utiliser `balances` **sans filtre par succursale** pour inclure aussi
+les clients sans transaction. Vérifier également les comptes, les rôles et les
+historiques, notamment les annulations et les transactions des clients supprimés.
 
-Un superutilisateur V2 conserve son compte et son mot de passe. Si la V2 n’en
-possédait aucun, créer le premier superutilisateur **après l’import** :
+Les comptes et mots de passe V2 restent utilisables. Si aucun superutilisateur
+n’existait, en créer un après l’import :
 
 ```bash
 docker compose run --rm --no-deps app python src/manage.py createsuperuser
@@ -294,78 +188,75 @@ docker compose run --rm --no-deps app python src/manage.py createsuperuser
 ## 7. Mettre la V3 en service
 
 ```bash
-docker compose up -d
+docker compose up --detach --wait
 ```
 
-Ouvrir <http://localhost:8000/connexion/>, puis vérifier les rôles, les soldes et
-les historiques, y compris les transactions annulées et les clients supprimés.
-Avec un superutilisateur, attribuer le premier rôle Propriétaire dans `/admin/`,
-puis configurer les succursales et affectations. La caisse initiale est
-`/succursales/1/`. Les comptes sans rôle demandent une attribution explicite :
-leur nom d’utilisateur ne détermine pas leur rôle.
+1. Ouvrir <http://localhost:8000/connexion/> avec un superutilisateur.
+2. Dans `/admin/`, attribuer le rôle **Propriétaire** à un compte employé.
+3. Créer les autres succursales et affecter les Gérants et Baristas concernés.
+4. Utiliser `/succursales/1/` pour le premier café et les adresses indiquant
+   l’identifiant des autres succursales pour leurs caisses.
 
-La V3 fonctionne désormais uniquement sur PostgreSQL. Conserver le SQLite V2 et
-sa sauvegarde comme archives. `docker compose down` conserve les données, tandis
-que `docker compose down -v` supprime les volumes : ne pas utiliser cette dernière
-commande pour un simple arrêt.
+Les transactions V2 et les affectations des Baristas et Gérants existants sont
+rattachées à la succursale nº 1. Les anciens rôles sont conservés ; les comptes
+sans rôle nécessitent une attribution explicite.
 
-En cas d’échec avant la mise en service, garder la V3 arrêtée, corriger la cause
-et relancer l’import sur une destination admissible. Le code et la configuration
-V2 peuvent reprendre le SQLite conservé. Après de nouvelles opérations dans
-PostgreSQL, cette archive ne contient plus les données récentes : un retour
-arrière doit en tenir compte.
+Conserver le SQLite V2, sa sauvegarde et les exports de soldes. Pour arrêter la
+V3 en conservant PostgreSQL, utiliser `docker compose down`, **sans `-v`**.
 
-## Ajouter les succursales à une installation existante
+## En cas d’échec
 
-Après avoir arrêté le serveur et sauvegardé la base utilisée par l’application, appliquer la mise à jour depuis la racine du dépôt, avec l’environnement virtuel activé :
+Garder l’application arrêtée et consulter `docker compose logs`. Si le transfert
+a échoué, corriger la cause puis relancer la commande sur une destination
+admissible. Ne pas effacer une base contenant des données à conserver.
 
-```bash
-python src/manage.py migrate
-python src/manage.py check
+Pour reprendre la V2 avant la mise en service, utiliser le code et la
+configuration V2 avec le SQLite conservé ou sa sauvegarde. Après de nouvelles
+opérations en V3, cette sauvegarde ne contient plus les données récentes : ne
+pas l’utiliser comme remplacement de PostgreSQL.
+
+## Résultat de notre vérification V2 → V3
+
+Vérification effectuée le **15 novembre 2026**, avec une base SQLite créée par
+`scripts/donnees_v2.py` provenant du **tag `v2.0.0`**, et non par le script du
+code V3. Les soldes ont été exportés avec la commande `balances` de cette V2,
+puis la base a été transférée avec le script V3 vers une instance PostgreSQL
+isolée dans Docker Compose. Une nouvelle exécution de `balances` dans le
+conteneur V3 a produit un CSV **strictement identique** à celui de la V2.
+
+Chaque cellule indique **avant / après** :
+
+| ID | Client | Achats cumulés | Étampes | Récompenses en réserve | Cafés prépayés restants |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Alice Tremblay | 9 / 9 | 9 / 9 | 0 / 0 | 0 / 0 |
+| 2 | Benoît Gagnon | 10 / 10 | 0 / 0 | 1 / 1 | 0 / 0 |
+| 3 | Camille Roy | 0 / 0 | 0 / 0 | 15 / 15 | 200 / 200 |
+| 4 | Dominique Fortin | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| 5 | Fusion source | 3 / 3 | 3 / 3 | 0 / 0 | 0 / 0 |
+| 6 | Fusion destination | 7 / 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| 8 | Alice Tremblay | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+Les deux clients nommés Alice Tremblay sont distincts, d’où la présence de leurs
+identifiants. Le client source de la fusion est inactif, mais reste inclus dans
+`balances`. Les 200 cafés prépayés de Camille correspondent aux 20 cartes de
+10 cafés achetées par le script V2 ; cette valeur n’a pas été recalculée.
+
+Le script de transfert a affiché :
+
+```text
+Transfert vérifié : 8 clients, 9 transactions, 5 comptes. SQLite conservé.
 ```
 
-La migration `0017_succursales` crée la succursale d’identifiant `1`, nommée « Succursale #1 », et lui associe toutes les transactions existantes, y compris les transactions annulées et celles des clients supprimés. Les dates, les quantités et les soldes des clients sont conservés. Cette migration fonctionne avec PostgreSQL et SQLite; elle s’applique aussi automatiquement aux installations neuves.
+Les contrôles supplémentaires ont confirmé :
 
-La fidélité reste commune à toutes les succursales. Les opérations saisies dans les formulaires utilisent maintenant la succursale de l’URL. Le service `ajouter_cafes` exige le paramètre `succursale_id` et vérifie les droits de l’employé; aucune opération de caisse ne choisit implicitement la succursale nº 1.
+- **8 clients conservés**, dont le client fictif d’identifiant `-1`, exclu de
+  `balances`, et **9 transactions toutes rattachées à la succursale nº 1**.
+- **1 annulation et 1 fusion conservées**, ainsi que les identifiants, dates,
+  quantités et liens des transactions.
+- **5 comptes conservés**, avec les mêmes mots de passe hachés, rôles et états
+  d’activation ; les cinq employés sont affectés à la succursale nº 1.
+- **Fichier SQLite original inchangé**, vérifié par comparaison de son empreinte
+  SHA-256 avant et après le transfert.
 
-Les Propriétaires et superutilisateurs peuvent créer et renommer les succursales dans l’administration Django; leur suppression est désactivée. La succursale apparaît en lecture seule sur les transactions et permet de filtrer leur liste. Les gérants consultent et annulent les transactions des succursales auxquelles ils sont affectés, sans accès à la gestion des succursales.
-
-Pour un transfert de SQLite vers PostgreSQL, le script applique cette migration sur sa copie temporaire et conserve les succursales et leurs liens avec les transactions.
-
-## Ajouter le Propriétaire et les affectations
-
-La même commande `python src/manage.py migrate` applique `0018_proprietaire_affectations`. Elle crée le groupe Propriétaire et les affectations des Baristas et Gérants existants à la succursale nº 1, y compris les comptes désactivés. Elle conserve les rôles existants, les identifiants, les mots de passe, les soldes et l’historique. Aucun compte n’est automatiquement promu Propriétaire.
-
-Après la migration :
-
-1. Se connecter avec un superutilisateur sur `/admin/`.
-2. Créer ou modifier un compte employé, choisir le rôle **Propriétaire**, puis enregistrer. Ce compte obtient tous les droits métier et toutes les succursales sans devenir superutilisateur Django.
-3. Le Propriétaire peut ensuite créer des Gérants et configurer les succursales de chaque employé. Un gérant peut créer uniquement des Baristas et gérer leurs affectations dans ses propres succursales. Les affectations hors de son périmètre sont conservées.
-4. Remplacer les adresses des caisses par `/succursales/1/`, `/succursales/2/`, etc. Le nom de la succursale est affiché dans l’en-tête. `/` affiche les succursales accessibles, sans permettre d’opération de caisse; les anciennes adresses `/clients/.../cafes/` ne sont plus utilisées.
-
-Les dix dernières transactions de chaque client restent visibles pour tous les employés autorisés à accéder à une caisse, toutes succursales confondues. Le barista peut annuler ses propres transactions récentes uniquement dans sa succursale courante. Le gérant peut annuler les transactions de toutes ses succursales; le Propriétaire peut annuler dans tout le réseau. Ces corrections restent des annulations tracées, sans suppression physique de transactions.
-
-Les Gérants conservent les fonctions globales de gestion des clients, de fusion, de correction des soldes et de paramétrage de la fidélité. Les rapports et exports Excel sont accessibles aux Gérants pour leurs succursales et aux Propriétaires et superutilisateurs pour tout le réseau. Les succursales choisies sont obligatoires et les droits sont revérifiés avant chaque génération. Un retrait d’affectation interdit les nouvelles opérations de caisse et annulations concernées, sans modifier l’historique.
-
-Lors d’un transfert SQLite vers PostgreSQL, le script applique également `0018` sur sa copie temporaire; aucune mise à jour manuelle du fichier SQLite source n’est nécessaire. Les affectations et le groupe Propriétaire sont transférés avec les autres données.
-
-## Promotions temporaires (migration 0019)
-
-L’application fonctionne sur PostgreSQL. Pour une installation déjà transférée :
-
-```bash
-python src/manage.py migrate
-```
-
-La migration initialise la progression habituelle avec le total existant des achats,
-préserve les soldes, les transactions, les annulations et les rôles, et adapte les
-instantanés des fusions réversibles. Aucune promotion n’est créée automatiquement.
-
-Pour l’import initial d’un fichier SQLite V2, utiliser uniquement :
-
-```bash
-python scripts/migrer_sqlite_vers_postgres.py --source src/db.sqlite3
-```
-
-
-
+La pile PostgreSQL de vérification a été supprimée après l’essai. La base de
+l’application et ses données n’ont pas été utilisées pour cette vérification.

@@ -190,7 +190,7 @@ class SuccursaleMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         self.dernier_schema = executor.loader.graph.leaf_nodes()
         self.addCleanup(lambda: MigrationExecutor(connection).migrate(self.dernier_schema))
-        avant = [("CafeDolbeau", "0016_fusions_sans_noms")]
+        avant = [("CafeDolbeau", "0016_fusions_sans_noms_compat_postgresql")]
         executor.migrate(avant)
         self.anciens_modeles = executor.loader.project_state(avant).apps
 

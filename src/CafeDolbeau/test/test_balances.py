@@ -2,17 +2,17 @@ import csv
 from datetime import timedelta
 from io import StringIO
 
-from django.core.management import call_command
+from django.core.management import call_command, CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from ..models import Client, ParametresCafe
+from ..models import AnnulationTransaction, Client, Employe, ParametresCafe, Succursale, TransactionCafe
 
 
 class BalancesTests(TestCase):
-    def soldes(self):
+    def soldes(self, *arguments):
         output = StringIO()
-        call_command("balances", stdout=output)
+        call_command("balances", *arguments, stdout=output)
         return list(csv.DictReader(StringIO(output.getvalue())))
 
     def test_affiche_les_compteurs_et_les_etampes_sans_modifier_les_clients(self):
@@ -51,3 +51,51 @@ class BalancesTests(TestCase):
             output.getvalue(),
             "id,client,cafes_achetes,etampes,recompenses_en_reserve,cafes_prepayes\n",
         )
+
+    def test_filtre_succursales_et_conserve_soldes_globaux_sans_doublons(self):
+        s1 = Succursale.objects.get(pk=1)
+        s2 = Succursale.objects.create(nom="Deuxième")
+        s3 = Succursale.objects.create(nom="Troisième")
+        partage = Client.objects.create(nom_complet="Partagé", nombre_cafes_achetes=37, nombre_cafes_prepayes=17, nombre_cafes_gratuits=4)
+        autre = Client.objects.create(nom_complet="Autre", nombre_cafes_achetes=2)
+        Client.objects.create(nom_complet="Sans transaction")
+        for succursale in (s1, s1, s2):
+            TransactionCafe.objects.create(client=partage, succursale=succursale, quantite=1)
+        TransactionCafe.objects.create(client=autre, succursale=s3, quantite=2)
+        avant = list(Client.objects.values())
+        globales = self.soldes()
+        attendues = [ligne for ligne in globales if ligne["id"] == str(partage.pk)]
+        for arguments in (
+            ("--succursale", str(s1.pk)),
+            ("--succursale", str(s2.pk)),
+            ("--succursale", str(s1.pk), "--succursale", str(s2.pk)),
+            ("--succursale", str(s1.pk), "--succursale", str(s1.pk)),
+        ):
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.soldes(*arguments), attendues)
+        self.assertEqual(len(globales), 3)
+        self.assertEqual(len(self.soldes("--succursale", str(s1.pk), "--succursale", str(s3.pk))), 2)
+        self.assertEqual(list(Client.objects.values()), avant)
+
+    def test_succursale_sans_transaction_ne_retourne_que_entetes(self):
+        vide = Succursale.objects.create(nom="Vide")
+        Client.objects.create(nom_complet="Client du réseau")
+        self.assertEqual(self.soldes("--succursale", str(vide.pk)), [])
+
+    def test_identifiants_inexistants_refuses_sans_csv_partiel(self):
+        for identifiant in (0, -1, 999999):
+            for arguments in (("--succursale", str(identifiant)), ("--succursale", "1", "--succursale", str(identifiant))):
+                with self.subTest(arguments=arguments):
+                    sortie = StringIO()
+                    with self.assertRaisesMessage(CommandError, "inexistante"):
+                        call_command("balances", *arguments, stdout=sortie)
+                    self.assertEqual(sortie.getvalue(), "")
+
+    def test_inclut_clients_inactifs_et_transactions_annulees_dans_filtre(self):
+        employe = Employe.objects.create_user("annulation-balances")
+        source = Client.objects.create(nom_complet="Source fusionnée", est_actif=False)
+        fictif = Client.objects.create(pk=-1, nom_complet="Client supprimé", est_actif=False)
+        ligne = TransactionCafe.objects.create(client=source, succursale_id=1, quantite=1)
+        AnnulationTransaction.objects.create(transaction=ligne, employe=employe)
+        TransactionCafe.objects.create(client=fictif, succursale_id=1, quantite=1)
+        self.assertEqual([ligne["id"] for ligne in self.soldes("--succursale", "1")], [str(source.pk)])

@@ -15,8 +15,9 @@ Les restrictions seront vérifiés à l'aide d'un ID de chaque sucursale envoyé
 ### Les rapports du réseau
 Pour les rapports, on devra ajouté une selection de la sucursale.
 
-
 ## Des conteneurs prêts pour la production
+La création des conteneurs risque de ne pas demander de changement à la strcuture actuellement, seulement des additions. 
+
 
 ## Ce qui nous a surpris 
 Nous attendions à ce que l'ajout de sucursale vienne et au déploiement web de l'application mais, on ne s'attendait pas à devoir changer de `système de gestion de base de données` (SGBD).

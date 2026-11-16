@@ -1,9 +1,47 @@
 from pathlib import Path
 from runpy import run_path
+import hashlib
 
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TransactionTestCase
+from django.db.migrations.recorder import MigrationRecorder
+from django.test import SimpleTestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
+
+from ..models import Client
+
+
+class MigrationHistoriqueV2Tests(SimpleTestCase):
+    def test_0016_est_identique_au_fichier_livre_dans_v2_0_0(self):
+        chemin = Path(__file__).resolve().parents[1] / "migrations/0016_fusions_sans_noms.py"
+        contenu = chemin.read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(hashlib.sha256(contenu).hexdigest(), "953df3b12a9c18b934eba4d762a526769ab48f1b65a7afc4bbc505cc64d97f4b")
+
+
+class MigrationRemplacementV2Tests(TransactionTestCase):
+    def test_installation_avec_0016_deja_appliquee_ne_rejoue_pas_les_operations(self):
+        personne = Client.objects.create(nom_complet="Solde à conserver", nombre_cafes_prepayes=17)
+        original = ("CafeDolbeau", "0016_fusions_sans_noms")
+        remplacement = ("CafeDolbeau", "0016_fusions_sans_noms_compat_postgresql")
+        registre = MigrationRecorder(connection)
+        self.assertIn(original, registre.applied_migrations())
+        # Simuler l’arrivée du nouveau fichier sur une base déjà migrée en V2/V3.
+        registre.record_unapplied(*remplacement)
+        try:
+            executor = MigrationExecutor(connection)
+            dernier_schema = executor.loader.graph.leaf_nodes()
+            executor.loader.check_consistent_history(connection)
+            self.assertEqual(executor.migration_plan(dernier_schema), [])
+            with CaptureQueriesContext(connection) as requetes:
+                executor.migrate(dernier_schema)
+            self.assertFalse(any("ALTER TABLE" in requete["sql"] for requete in requetes))
+            personne.refresh_from_db()
+            self.assertEqual(personne.nombre_cafes_prepayes, 17)
+            self.assertIn(original, registre.applied_migrations())
+            self.assertIn(remplacement, registre.applied_migrations())
+        finally:
+            if remplacement not in registre.applied_migrations():
+                registre.record_applied(*remplacement)
 
 
 class MigrationV1Tests(TransactionTestCase):
