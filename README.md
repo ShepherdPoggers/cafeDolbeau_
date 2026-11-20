@@ -63,8 +63,22 @@ python3 infra/scripts/suivre-deploiement.py
 ```
 
 Ajouter un identifiant pour consulter une exécution précise, par exemple
-`python3 infra/scripts/suivre-deploiement.py 44809435792`. Cette commande suit une
-exécution existante ; elle ne déclenche pas un nouveau déploiement.
+`python3 infra/scripts/suivre-deploiement.py 44809435792`.
+
+Pour déclencher un nouveau déploiement, suivre cette exécution et afficher son
+résumé dans la même console :
+
+```bash
+python3 infra/scripts/suivre-deploiement.py --lancer
+```
+
+Ajouter `--ref NOM_BRANCHE_TAG_OU_SHA` pour déployer une autre version que `main`.
+Le workflow est toujours chargé depuis `main` ; les modifications du workflow et
+du script doivent donc être poussées avant la première utilisation de `--lancer`.
+Le runner autohébergé doit être en ligne. Sans `--lancer`, le script consulte
+uniquement une exécution existante. Un identifiant unique permet de suivre le
+pipeline lancé par la commande, même si d'autres déploiements sont déclenchés
+en parallèle. Les modifications locales non poussées ne sont pas déployées.
 
 Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
 

@@ -1,6 +1,8 @@
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +13,44 @@ SPEC.loader.exec_module(watch)
 
 
 class DeploymentSummaryTests(unittest.TestCase):
+    def test_launch_waits_for_its_own_run(self):
+        title = 'Déployer sur EC2 · feature/test · unique-token'
+        with patch.object(watch.uuid, 'uuid4', return_value=SimpleNamespace(hex='unique-token')), \
+                patch.object(watch.time, 'sleep') as sleep, \
+                patch.object(watch, 'gh', side_effect=[
+                    None,
+                    SimpleNamespace(stdout=json.dumps([{'databaseId': 1, 'displayTitle': 'another run'}])),
+                    SimpleNamespace(stdout=json.dumps([{'databaseId': 1, 'displayTitle': 'another run'},
+                                                      {'databaseId': 2, 'displayTitle': title}])),
+                    SimpleNamespace(returncode=0), SimpleNamespace(stdout=''),
+                ]) as gh:
+            self.assertEqual(watch.main(['--lancer', '--ref', 'feature/test']), 0)
+        self.assertEqual(gh.call_args_list[0].args, (
+            'workflow', 'run', 'deploy.yml', '--ref', 'main', '-f', 'ref=feature/test',
+            '-f', 'suivi_id=unique-token'))
+        self.assertEqual(gh.call_args_list[3].args, ('run', 'watch', '2', '--exit-status'))
+        sleep.assert_called_once_with(2)
+
+    def test_invalid_launch_arguments_do_not_call_github(self):
+        for arguments in [['--lancer', '123'], ['--ref', 'feature/test']]:
+            with self.subTest(arguments=arguments), patch.object(watch, 'gh') as gh:
+                with self.assertRaises(SystemExit):
+                    watch.main(arguments)
+                gh.assert_not_called()
+
+    def test_failed_dispatch_does_not_watch_previous_run(self):
+        with patch.object(watch, 'gh', side_effect=subprocess.CalledProcessError(1, 'gh')) as gh:
+            with self.assertRaises(subprocess.CalledProcessError):
+                watch.main(['--lancer'])
+        gh.assert_called_once()
+
+    def test_dispatch_timeout_does_not_trigger_again(self):
+        with patch.object(watch.time, 'monotonic', side_effect=[0, 121]), \
+                patch.object(watch, 'gh') as gh:
+            with self.assertRaisesRegex(SystemExit, 'Pipeline déclenché'):
+                watch.launch('main')
+        gh.assert_called_once()
+
     def test_extracts_output_without_commands_or_other_steps(self):
         log = '\n'.join([
             'deploy\tDNS EC2 : ec2-example\t2026-11-20T20:00:00Z print(command)',
