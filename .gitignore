@@ -224,6 +224,7 @@ __marimo__/
 # Fichiers statiques collectés pour le déploiement.
 staticfiles/
 # Infrastructure locale et secrets de déploiement
+actions-runner/
 .aws/
 .ssh/
 *.pem
