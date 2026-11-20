@@ -223,3 +223,11 @@ __marimo__/
 
 # Fichiers statiques collectés pour le déploiement.
 staticfiles/
+# Infrastructure locale et secrets de déploiement
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.deploy/

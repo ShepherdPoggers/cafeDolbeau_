@@ -1,0 +1,127 @@
+name: Déployer sur EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branche, tag ou SHA à déployer
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cafedolbeau-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      TF_VAR_ssh_allowed_cidrs: ${{ vars.SSH_ALLOWED_CIDRS }}
+      TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+      TF_IN_AUTOMATION: 'true'
+      PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Vérifier les paramètres
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_VAR_ssh_allowed_cidrs TF_VAR_ssh_public_key PUBLIC_DOMAIN; do
+            if [ -z "${!name}" ]; then echo "Variable GitHub manquante : $name"; exit 1; fi
+          done
+          echo "IMAGE_TAG=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+          terraform_wrapper: false
+
+      - name: Préparer et valider la configuration privée
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: python3 infra/scripts/prepare-release.py
+
+      - name: Vérifier les fichiers techniques
+        run: |
+          terraform fmt -check -recursive infra
+          bash -n infra/app/user-data.sh infra/scripts/deploy.sh
+          sh -n infra/proxy-entrypoint.sh
+          python3 -m unittest discover -s infra/tests -v
+
+      - name: Construire les images
+        run: |
+          docker buildx build --platform linux/amd64 --load --target production -f docker/Dockerfile -t "cafe-dolbeau-app:$IMAGE_TAG" .
+          docker buildx build --platform linux/amd64 --load -f docker/proxy.prod.Dockerfile -t "cafe-dolbeau-proxy:$IMAGE_TAG" .
+          docker save "cafe-dolbeau-app:$IMAGE_TAG" "cafe-dolbeau-proxy:$IMAGE_TAG" | gzip -1 > .deploy/release/images.tar.gz
+          cd .deploy/release
+          sha256sum .env compose.yaml deploy.sh images.tar.gz > SHA256SUMS
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-production-${{ github.run_id }}
+          role-duration-seconds: 7200
+
+      - name: Initialiser Terraform
+        working-directory: infra/app
+        run: |
+          terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=$AWS_REGION"
+          terraform validate
+          terraform test
+
+      - name: Planifier et protéger l’instance
+        working-directory: infra/app
+        run: |
+          terraform plan -input=false -lock-timeout=5m -out=deployment.tfplan
+          terraform show -json deployment.tfplan | python3 ../scripts/check-plan.py
+
+      - name: Appliquer le plan sauvegardé
+        working-directory: infra/app
+        run: |
+          terraform apply -input=false deployment.tfplan
+          terraform output -json > ../../.deploy/outputs.json
+
+      - name: Transférer et déployer via SSM
+        run: python3 infra/scripts/deploy-ssm.py
+
+      - name: Vérifier les accès publics
+        run: |
+          ip=$(python3 -c 'import json; print(json.load(open(".deploy/outputs.json"))["public_ip"]["value"])')
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 "http://$ip/healthz" > /dev/null
+          location=$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{redirect_url}' "http://$ip/")
+          test "$location" = "https://$PUBLIC_DOMAIN/"
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 "https://$PUBLIC_DOMAIN/healthz" > /dev/null
+          python3 - <<'PY'
+          import json, os
+          outputs = json.load(open('.deploy/outputs.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"Version : `{os.environ['IMAGE_TAG']}`\n\n")
+              summary.write(f"EC2 : `{outputs['instance_id']['value']}`\n\n")
+              summary.write(f"Application : https://{os.environ['PUBLIC_DOMAIN']}\n\n")
+              summary.write(f"Santé HTTP : http://{outputs['public_ip']['value']}/healthz\n")
+          PY
+
+      - name: Effacer les fichiers privés du runner
+        if: always()
+        run: rm -rf .deploy infra/app/deployment.tfplan

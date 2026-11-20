@@ -1,0 +1,9 @@
+*
+!docker/
+docker/*
+!docker/proxy.prod.Dockerfile
+!docker/proxy.prod.Dockerfile.dockerignore
+!infra/
+infra/*
+!infra/nginx.prod.conf
+!infra/proxy-entrypoint.sh
