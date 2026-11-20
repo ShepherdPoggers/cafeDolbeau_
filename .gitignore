@@ -224,6 +224,12 @@ __marimo__/
 # Fichiers statiques collectés pour le déploiement.
 staticfiles/
 # Infrastructure locale et secrets de déploiement
+.aws/
+.ssh/
+*.pem
+*.key
+id_rsa
+id_ed25519
 **/.terraform/*
 *.tfstate
 *.tfstate.*
