@@ -49,7 +49,7 @@ def dump_command(args):
 
 
 def ssh_command(args):
-    command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+    command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
                '-o', 'ConnectTimeout=15', '-p', str(args.port)]
     if args.identity:
         command += ['-i', args.identity]

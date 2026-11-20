@@ -37,7 +37,7 @@ class TransferTests(unittest.TestCase):
             transfer.main(['--host', 'ubuntu@prod', '--confirm-host', 'ubuntu@prod'])
         self.assertFalse(self.archive.exists())
         self.assertEqual(len(calls), 3)
-        self.assertIn('StrictHostKeyChecking=yes', calls[0])
+        self.assertIn('StrictHostKeyChecking=accept-new', calls[0])
 
     def test_failed_export_is_not_transferred(self):
         with patch.object(transfer.subprocess, 'run', side_effect=[None, subprocess.CalledProcessError(1, 'dump')]) as run:
