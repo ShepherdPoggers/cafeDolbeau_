@@ -142,9 +142,16 @@ jobs:
               f"python3 infra/scripts/transferer-postgres.py --host {host} "
               f"--confirm-host {host} --identity ~/.ssh/cafedolbeau"
           )
-          print(f"DNS public EC2 : {dns}")
-          print('Transfert PostgreSQL depuis votre ordinateur (remplace les données du site) :')
-          print(command)
+          for line in (
+              f"Version : {os.environ['IMAGE_TAG']}",
+              f"EC2 : {outputs['instance_id']['value']}",
+              f"DNS public EC2 : {dns}",
+              f"Application : https://{os.environ['PUBLIC_DOMAIN']}",
+              f"Santé HTTP : http://{outputs['public_ip']['value']}/healthz",
+              'Transfert PostgreSQL depuis votre ordinateur (remplace les données du site) :',
+              command,
+          ):
+              print(line)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"Version : `{os.environ['IMAGE_TAG']}`\n\n")
               summary.write(f"EC2 : `{outputs['instance_id']['value']}`\n\n")

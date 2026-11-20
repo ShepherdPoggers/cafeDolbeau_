@@ -55,6 +55,17 @@ concernent les versions historiques et leurs données de démonstration.
 Pour transférer PostgreSQL local directement vers EC2 sans passer les données par
 GitHub, suivre la [procédure de transfert PostgreSQL](docs/transfert-postgres.md).
 
+Pour suivre le dernier déploiement de `main` puis afficher son résumé dans le
+terminal (DNS EC2, liens et commande de transfert), avec GitHub CLI connecté :
+
+```bash
+python3 infra/scripts/suivre-deploiement.py
+```
+
+Ajouter un identifiant pour consulter une exécution précise, par exemple
+`python3 infra/scripts/suivre-deploiement.py 44809435792`. Cette commande suit une
+exécution existante ; elle ne déclenche pas un nouveau déploiement.
+
 Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
 
 ```bash
