@@ -33,6 +33,24 @@ variable "existing_oidc_provider_arn" {
   default = ""
 }
 
+variable "github_owner_id" {
+  type    = string
+  default = "146887969"
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "Fournir l'identifiant numérique du propriétaire GitHub."
+  }
+}
+
+variable "github_repository_id" {
+  type    = string
+  default = "1383926134"
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "Fournir l'identifiant numérique du dépôt GitHub."
+  }
+}
+
 provider "aws" {
   region = var.region
 }
@@ -50,6 +68,8 @@ locals {
   account      = data.aws_caller_identity.current.account_id
   artifact_arn = "arn:aws:s3:::cafedolbeau-artifacts-${local.account}-${var.region}"
   instance_iam = "arn:aws:iam::${local.account}:role/cafedolbeau-instance"
+  # Format immuable GitHub : les noms seuls ne correspondent plus aux nouveaux dépôts.
+  github_subject = "repo:${split("/", var.github_repository)[0]}@${var.github_owner_id}/${split("/", var.github_repository)[1]}@${var.github_repository_id}:environment:production"
 }
 
 resource "aws_iam_role" "github" {
@@ -62,7 +82,7 @@ resource "aws_iam_role" "github" {
       Principal = { Federated = local.oidc_arn }
       Condition = { StringEquals = {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:production"
+        "token.actions.githubusercontent.com:sub" = local.github_subject
       } }
     }]
   })

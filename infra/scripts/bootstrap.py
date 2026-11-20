@@ -18,6 +18,8 @@ def main():
     parser.add_argument("--state-bucket", required=True)
     parser.add_argument("--region", default="us-east-2", choices=["us-east-2"])
     parser.add_argument("--repository", default="ShepherdPoggers/cafeDolbeau_")
+    parser.add_argument("--owner-id", default="146887969")
+    parser.add_argument("--repository-id", default="1383926134")
     args = parser.parse_args()
     missing = [tool for tool in ("aws", "terraform") if shutil.which(tool) is None]
     if missing:
@@ -64,6 +66,8 @@ def main():
     env = os.environ | {
         "TF_VAR_region": args.region, "TF_VAR_state_bucket": bucket,
         "TF_VAR_github_repository": args.repository,
+        "TF_VAR_github_owner_id": args.owner_id,
+        "TF_VAR_github_repository_id": args.repository_id,
         "TF_VAR_existing_oidc_provider_arn": existing_arn,
     }
     root = Path(__file__).resolve().parents[1] / "bootstrap"
