@@ -10,3 +10,6 @@ output "artifact_bucket" {
 output "ami_id" {
   value = aws_instance.main.ami
 }
+output "ssh_public_keys" {
+  value = local.ssh_public_keys
+}

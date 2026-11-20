@@ -77,7 +77,11 @@ resource "aws_vpc_security_group_egress_rule" "outbound" {
 
 resource "aws_key_pair" "ssh" {
   key_name   = "cafedolbeau-ssh"
-  public_key = trimspace(var.ssh_public_key)
+  public_key = local.ssh_public_keys[0]
+  lifecycle {
+    # La paire EC2 sert seulement au premier boot ; SSM synchronise toutes les clés.
+    ignore_changes = [public_key]
+  }
 }
 
 resource "aws_s3_bucket" "artifacts" {

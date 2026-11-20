@@ -5,7 +5,10 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import shlex
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,6 +110,26 @@ if [[ "$*" == *"run --rm --no-deps init"* ]]; then exit 42; fi
             self.assertIn('run --rm --no-deps init', log.read_text())
             self.assertNotIn('--wait-timeout 240 app', log.read_text())
             self.assertFalse((root / 'current').exists())
+
+
+class SSHKeysTests(unittest.TestCase):
+    def test_sync_installs_all_keys_and_removes_revoked_keys(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / '.ssh'
+            folder.mkdir()
+            (folder / 'authorized_keys').write_text('old-revoked-key\n')
+            keys = ["ssh-ed25519 AAAATest elliot", "ssh-ed25519 AAAASecond colleague's key"]
+            args = shlex.split(module('deploy-ssm').ssh_keys_command(keys))
+            user = SimpleNamespace(pw_dir=temporary, pw_uid=os.getuid(), pw_gid=os.getgid())
+            with patch('pwd.getpwnam', return_value=user), patch('sys.argv', ['-c', args[3]]):
+                exec(compile(args[2], '<ssh-key-sync>', 'exec'), {})
+            self.assertEqual((folder / 'authorized_keys').read_text(), '\n'.join(keys) + '\n')
+            self.assertEqual((folder / 'authorized_keys').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
+
+    def test_empty_keys_rejected(self):
+        with self.assertRaises(ValueError):
+            module('deploy-ssm').ssh_keys_command([])
 
 
 if __name__ == '__main__':

@@ -8,6 +8,30 @@ import subprocess
 import time
 
 
+def ssh_keys_command(keys):
+    """Remplacer atomiquement les clés du compte ubuntu, sans redémarrer EC2."""
+    if not keys:
+        raise ValueError("Au moins une clé SSH est requise.")
+    script = '''import json, os, pwd, sys, tempfile
+from pathlib import Path
+keys = json.loads(sys.argv[1])
+user = pwd.getpwnam('ubuntu')
+folder = Path(user.pw_dir) / '.ssh'
+if folder.is_symlink():
+    raise SystemExit('Le dossier .ssh ne doit pas être un lien symbolique.')
+folder.mkdir(mode=0o700, exist_ok=True)
+os.chown(folder, user.pw_uid, user.pw_gid)
+folder.chmod(0o700)
+with tempfile.NamedTemporaryFile(mode='w', dir=folder, delete=False) as output:
+    temporary = Path(output.name)
+    os.fchmod(output.fileno(), 0o600)
+    os.fchown(output.fileno(), user.pw_uid, user.pw_gid)
+    output.write('\\n'.join(keys) + '\\n')
+temporary.replace(folder / 'authorized_keys')
+'''
+    return "python3 -c " + shlex.quote(script) + " " + shlex.quote(json.dumps(keys))
+
+
 def aws(*args, check=True):
     return subprocess.run(["aws", *args, "--output", "json"], check=check,
                           text=True, capture_output=True)
@@ -44,6 +68,7 @@ def main():
         command = "\n".join([
             "set -eu", "umask 077",
             "cloud-init status --wait >/dev/null",
+            ssh_keys_command(outputs["ssh_public_keys"]["value"]),
             "systemctl is-active --quiet docker",
             "docker compose version >/dev/null",
             f"install -d -m 0700 {shlex.quote(folder)}",

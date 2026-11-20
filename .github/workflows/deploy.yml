@@ -32,6 +32,7 @@ jobs:
       TF_VAR_region: ${{ vars.AWS_REGION || 'us-east-2' }}
       TF_VAR_ssh_allowed_cidrs: ${{ vars.SSH_ALLOWED_CIDRS }}
       TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_public_keys: ${{ vars.SSH_PUBLIC_KEYS || '[]' }}
       TF_IN_AUTOMATION: 'true'
       PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
     steps:
@@ -44,9 +45,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_VAR_ssh_allowed_cidrs TF_VAR_ssh_public_key PUBLIC_DOMAIN; do
+          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_VAR_ssh_allowed_cidrs PUBLIC_DOMAIN; do
             if [ -z "${!name}" ]; then echo "Variable GitHub manquante : $name"; exit 1; fi
           done
+          python3 - <<'PY'
+          import json, os
+          keys = json.loads(os.environ['TF_VAR_ssh_public_keys'])
+          if not isinstance(keys, list) or any(not isinstance(key, str) for key in keys):
+              raise SystemExit('SSH_PUBLIC_KEYS doit être une liste JSON de clés publiques.')
+          if not keys and not os.environ.get('TF_VAR_ssh_public_key', '').strip():
+              raise SystemExit('Configurer SSH_PUBLIC_KEYS ou SSH_PUBLIC_KEY dans GitHub.')
+          PY
           echo "IMAGE_TAG=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3

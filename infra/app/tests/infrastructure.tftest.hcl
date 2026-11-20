@@ -44,6 +44,39 @@ run "reject_public_ssh" {
   expect_failures = [var.ssh_allowed_cidrs]
 }
 
+run "multiple_public_keys" {
+  command = plan
+  variables {
+    ssh_public_key = ""
+    ssh_public_keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyOnly elliot",
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISecondKeyOnly collegue",
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyOnly elliot"
+    ]
+  }
+  assert {
+    condition     = length(output.ssh_public_keys) == 2
+    error_message = "Toutes les clés distinctes doivent être autorisées."
+  }
+}
+
+run "reject_invalid_public_key" {
+  command = plan
+  variables {
+    ssh_public_keys = ["ceci-n-est-pas-une-cle"]
+  }
+  expect_failures = [var.ssh_public_keys]
+}
+
+run "reject_missing_public_keys" {
+  command = plan
+  variables {
+    ssh_public_key  = ""
+    ssh_public_keys = []
+  }
+  expect_failures = [var.ssh_public_keys]
+}
+
 run "reject_empty_ssh" {
   command = plan
   variables {
