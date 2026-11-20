@@ -42,25 +42,25 @@ class PlanProtectionTests(unittest.TestCase):
 
 
 class ProductionConfigTests(unittest.TestCase):
-    def prepare(self, folder, env_content):
+    def prepare(self, folder, secrets):
         (folder / 'docker').mkdir()
         (folder / 'infra/scripts').mkdir(parents=True)
         for relative in ('docker/compose.prod.yaml', 'infra/scripts/deploy.sh'):
             (folder / relative).write_bytes((ROOT / relative).read_bytes())
         return subprocess.run(['python3', str(ROOT / 'infra/scripts/prepare-release.py')], cwd=folder,
-                              env=os.environ | {'PRODUCTION_ENV': env_content,
-                                                'IMAGE_TAG': 'a' * 40, 'PUBLIC_DOMAIN': 'cafe.example.com'},
+                              env=os.environ | {'SECRET_KEY': '', 'POSTGRES_PASSWORD': '', 'CLOUDFLARE_TUNNEL_TOKEN': '',
+                                                'IMAGE_TAG': 'a' * 40, 'PUBLIC_DOMAIN': 'cafe.example.com'} | secrets,
                               text=True, capture_output=True)
 
     def test_missing_secrets_rejected_without_disclosure(self):
         marker = 'private-secret-must-not-be-printed'
         with tempfile.TemporaryDirectory() as folder:
-            result = self.prepare(Path(folder), f'SECRET_KEY={marker}\n')
+            result = self.prepare(Path(folder), {'SECRET_KEY': marker})
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn(marker, result.stdout + result.stderr)
 
     def test_prod_config_exposes_only_proxy_and_local_metrics(self):
-        content = f'SECRET_KEY={"s" * 64}\nPOSTGRES_PASSWORD={"p" * 64}\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n'
+        content = {'SECRET_KEY': 's' * 64, 'POSTGRES_PASSWORD': 'p' * 64, 'CLOUDFLARE_TUNNEL_TOKEN': 'test-token'}
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             result = self.prepare(folder, content)
@@ -79,6 +79,22 @@ class ProductionConfigTests(unittest.TestCase):
             self.assertEqual(services['app']['environment']['DJANGO_SESSION_COOKIE_SECURE'], 'true')
             self.assertEqual(services['app']['image'], services['init']['image'])
             self.assertEqual(services['app']['image'], services['secrets']['image'])
+
+    def test_special_characters_preserved_without_logging_secrets(self):
+        content = {'SECRET_KEY': 'x' * 32 + '''$HOME ${VARIABLE} "quote" 'apostrophe' \\path #comment''',
+                   'POSTGRES_PASSWORD': 'p' * 48, 'CLOUDFLARE_TUNNEL_TOKEN': 'test-token'}
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.prepare(Path(folder), content)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(content['SECRET_KEY'], result.stdout + result.stderr)
+
+    def test_multiline_secret_rejected_without_logging(self):
+        content = {'SECRET_KEY': 's' * 64, 'POSTGRES_PASSWORD': 'p' * 48,
+                   'CLOUDFLARE_TUNNEL_TOKEN': 'private-token\nINJECTED_VARIABLE=value'}
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.prepare(Path(folder), content)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('private-token', result.stdout + result.stderr)
 
 
 class MigrationFailureTests(unittest.TestCase):

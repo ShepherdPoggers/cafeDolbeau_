@@ -67,7 +67,9 @@ jobs:
 
       - name: Préparer et valider la configuration privée
         env:
-          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
         run: python3 infra/scripts/prepare-release.py
 
       - name: Vérifier les fichiers techniques
