@@ -108,10 +108,17 @@ jobs:
           terraform show -json deployment.tfplan | python3 ../scripts/check-plan.py
 
       - name: Appliquer le plan sauvegardé
+        id: infrastructure
         working-directory: infra/app
         run: |
           terraform apply -input=false deployment.tfplan
           terraform output -json > ../../.deploy/outputs.json
+          python3 - <<'PY'
+          import json, os
+          outputs = json.load(open('../../.deploy/outputs.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"public_dns={outputs['public_dns']['value']}\n")
+          PY
 
       - name: Transférer et déployer via SSM
         run: python3 infra/scripts/deploy-ssm.py
@@ -123,14 +130,30 @@ jobs:
           location=$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{redirect_url}' "http://$ip/")
           test "$location" = "https://$PUBLIC_DOMAIN/"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 "https://$PUBLIC_DOMAIN/healthz" > /dev/null
+
+      - name: 'DNS EC2 : ${{ steps.infrastructure.outputs.public_dns }}'
+        run: |
           python3 - <<'PY'
           import json, os
           outputs = json.load(open('.deploy/outputs.json'))
+          dns = outputs['public_dns']['value']
+          host = f"ubuntu@{dns}"
+          command = (
+              f"python3 infra/scripts/transferer-postgres.py --host {host} "
+              f"--confirm-host {host} --identity ~/.ssh/cafedolbeau"
+          )
+          print(f"DNS public EC2 : {dns}")
+          print('Transfert PostgreSQL depuis votre ordinateur (remplace les données du site) :')
+          print(command)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"Version : `{os.environ['IMAGE_TAG']}`\n\n")
               summary.write(f"EC2 : `{outputs['instance_id']['value']}`\n\n")
+              summary.write(f"DNS public EC2 : `{dns}`\n\n")
               summary.write(f"Application : https://{os.environ['PUBLIC_DOMAIN']}\n\n")
-              summary.write(f"Santé HTTP : http://{outputs['public_ip']['value']}/healthz\n")
+              summary.write(f"Santé HTTP : http://{outputs['public_ip']['value']}/healthz\n\n")
+              summary.write('Transfert PostgreSQL depuis votre ordinateur '
+                            '(remplace les données du site) :\n\n')
+              summary.write(f"```bash\n{command}\n```\n")
           PY
 
       - name: Effacer les fichiers privés du runner
