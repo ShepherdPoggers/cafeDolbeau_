@@ -16,6 +16,9 @@ venv
 **/*.sqlite3
 **/*.sqlite3-*
 **/*.db
+**/*.dump
+**/*.sql
+**/*.sql.gz
 **/*.log
 **/*.csv
 **/*.xlsx

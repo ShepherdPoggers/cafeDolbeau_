@@ -52,6 +52,9 @@ les migrations automatiques, la création du premier compte, l’import SQLite V
 le changement de domaine et le développement séparé. Les procédures V1/V2 plus bas
 concernent les versions historiques et leurs données de démonstration.
 
+Pour transférer PostgreSQL local directement vers EC2 sans passer les données par
+GitHub, suivre la [procédure de transfert PostgreSQL](docs/transfert-postgres.md).
+
 Tous les tests Django et JavaScript, avec un PostgreSQL isolé :
 
 ```bash
