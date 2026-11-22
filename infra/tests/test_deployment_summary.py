@@ -1,8 +1,10 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +12,60 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('watch_deployment', ROOT / 'infra/scripts/suivre-deploiement.py')
 watch = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(watch)
+
+
+class RepositorySelectionTests(unittest.TestCase):
+    def setUp(self):
+        folder = self.enterContext(tempfile.TemporaryDirectory())
+        self.root = Path(folder)
+        self.enterContext(patch.object(watch, 'ROOT', self.root))
+        self.enterContext(patch.dict(os.environ, {}, clear=True))
+
+    def test_persistent_repo_is_used_in_all_deployment_calls(self):
+        (self.root / '.env').write_text('SECRET_KEY="unrelated secret"\nGH_REPO="Nyx-Akuma/cafeDolbeau_" # fork\n')
+        with patch.object(watch.uuid, 'uuid4', return_value=SimpleNamespace(hex='token')), \
+                patch.object(watch.subprocess, 'run', side_effect=[
+                    None,
+                    SimpleNamespace(stdout=json.dumps([{'databaseId': 123, 'displayTitle': 'Déployer sur EC2 · main · token'}])),
+                    SimpleNamespace(returncode=0), SimpleNamespace(stdout=''),
+                ]) as run:
+            self.assertEqual(watch.main(['--lancer']), 0)
+        self.assertEqual(run.call_count, 4)
+        for call in run.call_args_list:
+            self.assertEqual(call.args[0][-2:], ['--repo', 'Nyx-Akuma/cafeDolbeau_'])
+            self.assertEqual(call.kwargs['cwd'], self.root)
+            self.assertNotIn('unrelated secret', str(call))
+
+    def test_github_repo_takes_priority_over_legacy_guide_variable(self):
+        (self.root / '.env').write_text('GH_REPO=file/fork\n')
+        with patch.dict(os.environ, {'GH_REPO': 'explicit/fork', 'CAFE_REPO': 'guide/fork'}):
+            self.assertEqual(watch.configured_repo(), 'explicit/fork')
+        with patch.dict(os.environ, {'CAFE_REPO': 'guide/fork'}):
+            self.assertEqual(watch.configured_repo(), 'file/fork')
+        (self.root / '.env').write_text('GH_REPO=\n')
+        with patch.dict(os.environ, {'CAFE_REPO': 'guide/fork'}):
+            self.assertEqual(watch.configured_repo(), 'guide/fork')
+
+    def test_no_explicit_repo_preserves_cli_default(self):
+        for content in [None, 'GH_REPO=\nSECRET_KEY=anything\n']:
+            with self.subTest(content=content):
+                if content is not None:
+                    (self.root / '.env').write_text(content)
+                with patch.object(watch.subprocess, 'run') as run:
+                    watch.gh('run', 'watch', '123')
+                self.assertEqual(run.call_args.args[0], ['gh', 'run', 'watch', '123'])
+
+    def test_export_and_comments_are_supported_without_loading_other_settings(self):
+        (self.root / '.env').write_text('SECRET_KEY="not a valid shell string\nexport GH_REPO=owner/fork # comment\n')
+        self.assertEqual(watch.configured_repo(), 'owner/fork')
+        self.assertNotIn('SECRET_KEY', os.environ)
+
+    def test_invalid_repository_setting_stops_before_github_call(self):
+        (self.root / '.env').write_text('GH_REPO=owner/fork extra\n')
+        with patch.object(watch.subprocess, 'run') as run:
+            with self.assertRaises(ValueError):
+                watch.main(['--lancer'])
+        run.assert_not_called()
 
 
 class DeploymentSummaryTests(unittest.TestCase):

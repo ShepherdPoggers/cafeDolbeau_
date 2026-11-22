@@ -2,8 +2,10 @@
 """Suivre un déploiement GitHub Actions puis afficher son résumé dans le terminal."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import time
 import uuid
@@ -27,8 +29,32 @@ def summary_lines(log):
     return lines
 
 
+def configured_repo():
+    """Lire le dépôt explicite sans charger les secrets du .env dans le processus."""
+    value = os.environ.get('GH_REPO', '').strip()
+    if value:
+        return value
+    env_file = ROOT / '.env'
+    if env_file.is_file():
+        repository = ''
+        for line in env_file.read_text().splitlines():
+            match = re.fullmatch(r'\s*(?:export\s+)?GH_REPO\s*=\s*(.*)', line)
+            if match:
+                values = shlex.split(match.group(1), comments=True)
+                if len(values) > 1:
+                    raise ValueError('GH_REPO doit contenir un seul nom de dépôt.')
+                repository = values[0].strip() if values else ''
+        if repository:
+            return repository
+    return os.environ.get('CAFE_REPO', '').strip() or None
+
+
 def gh(*args, **kwargs):
-    return subprocess.run(['gh', *args], cwd=ROOT, **kwargs)
+    command = ['gh', *args]
+    repository = configured_repo()
+    if repository:
+        command += ['--repo', repository]
+    return subprocess.run(command, cwd=ROOT, **kwargs)
 
 
 def launch(ref):
@@ -64,6 +90,9 @@ def main(argv=None):
         parser.error('--lancer ne peut pas être combiné avec un ID existant.')
     if args.ref is not None and not args.lancer:
         parser.error('--ref nécessite --lancer.')
+    repository = configured_repo()
+    if repository:
+        print(f'Dépôt GitHub : {repository}', flush=True)
     run_id = args.run_id
     if args.lancer:
         run_id = launch(args.ref or 'main')
@@ -85,7 +114,10 @@ def main(argv=None):
     else:
         print('\nAucun résumé disponible pour cette exécution.', flush=True)
     if watched.returncode:
-        print(f'Consulter les erreurs : gh run view {run_id} --log-failed', flush=True)
+        diagnostic = ['gh', 'run', 'view', str(run_id), '--log-failed']
+        if repository:
+            diagnostic += ['--repo', repository]
+        print(f'Consulter les erreurs : {shlex.join(diagnostic)}', flush=True)
     return watched.returncode
 
 

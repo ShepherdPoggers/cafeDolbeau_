@@ -402,6 +402,38 @@ fork avec `git remote set-url origin "https://github.com/$CAFE_REPO.git"`.
 Vérifier `git status` avant tout changement de branche ; conserver les modifications
 locales et pousser le code voulu sur votre `main` avant le déploiement.
 
+**Fixer votre fork comme dépôt GitHub CLI par défaut**, depuis ce dossier :
+
+```bash
+gh repo set-default "$CAFE_REPO"
+gh repo set-default --view
+```
+
+Attendu : votre dépôt, jamais celui du propriétaire original. Ce choix persiste
+pour cette copie Git, y compris dans un nouveau terminal, et s'applique aux
+commandes `gh run`, `gh workflow`, etc. Une variable `GH_REPO` déjà exportée dans
+le terminal reste prioritaire : vérifier qu'elle ne pointe pas vers un autre dépôt.
+
+Pour configurer explicitement le script de déploiement de façon persistante,
+ajouter ou modifier **cette seule ligne** dans le `.env` à la racine du projet,
+avec votre véritable dépôt :
+
+```dotenv
+GH_REPO=mon-compte/cafeDolbeau_
+```
+
+Si `.env` existe déjà, conserver toutes ses autres valeurs. S'il n'existe pas,
+copier `.env.example` dans `.env` puis renseigner `GH_REPO`. Ne pas ajouter `.env`
+à Git. Le script utilise, dans cet ordre : `GH_REPO` du terminal, `GH_REPO`
+du `.env`, `CAFE_REPO` du terminal, puis le dépôt par défaut de GitHub CLI. Aligner
+ces valeurs sur le même fork. Seule cette option du `.env` est lue par le script,
+sans importer les secrets applicatifs dans les commandes GitHub.
+
+Après cette configuration, la commande reste simplement
+`python3 infra/scripts/suivre-deploiement.py --lancer` : inutile de la préfixer
+par `GH_REPO=...`. Le script affiche le dépôt explicite sélectionné, puis
+l'utilise pour le lancement, la recherche d'exécution, le suivi et les logs.
+
 ### 3.3. Générer la clé qui servira au transfert
 
 **CLIENT**, vérifier si la clé existe déjà :
@@ -617,13 +649,29 @@ Dans **Settings → Environments → production → Environment secrets**, cliqu
 
 | Nom exact | Valeur | Création et conservation |
 | --- | --- | --- |
-| `SECRET_KEY` | Secret Django sur une ligne, au moins 32 caractères | Générer 64 caractères aléatoires alphanumériques avec le gestionnaire de mots de passe |
+| `SECRET_KEY` | Secret Django sur une ligne, au moins 32 caractères | Générer avec la commande Python ci-dessous, puis conserver dans le gestionnaire de mots de passe |
 | `POSTGRES_PASSWORD` | Secret distinct, une ligne, au moins 32 caractères | Générer une deuxième valeur de 64 caractères ; ne pas réutiliser la précédente |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Jeton seul, sans commande autour | Tunnel de la section 4 |
 
-Dans le gestionnaire, créer deux entrées distinctes avec son générateur de mot
-de passe, longueur **64**, lettres majuscules/minuscules et chiffres, puis copier
-chaque valeur dans le champ correspondant. Enregistrer aussi le jeton Cloudflare.
+**CLIENT — terminal Ubuntu, WSL ou macOS.** Pour la première installation,
+exécuter cette commande afin de générer `SECRET_KEY` :
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(64))'
+```
+
+La commande affiche une clé d'environ **86 caractères**, issue de 64 octets
+aléatoires. Copier uniquement la ligne générée, sans espaces ni retour à la ligne,
+dans une entrée `SECRET_KEY` du gestionnaire de mots de passe. Dans GitHub, ouvrir
+**Settings → Environments → production → Environment secrets → Add environment
+secret**, saisir **`SECRET_KEY`** dans **Name**, coller la même valeur dans
+**Secret**, puis enregistrer. Ne pas réexécuter cette commande pour remplacer la
+clé lors des déploiements suivants : réutiliser la valeur conservée.
+
+Pour `POSTGRES_PASSWORD`, créer une entrée distincte avec le générateur du
+gestionnaire : longueur **64**, lettres majuscules/minuscules et chiffres, puis
+copier cette valeur dans le secret GitHub `POSTGRES_PASSWORD`. Enregistrer aussi
+le jeton Cloudflare dans le gestionnaire et le secret GitHub correspondant.
 Ne pas copier les secrets dans un fichier du dépôt ni dans une commande conservée
 dans l'historique. Les secrets de production peuvent différer de ceux de la base
 locale : l'export ne transfère pas le mot de passe du rôle PostgreSQL.

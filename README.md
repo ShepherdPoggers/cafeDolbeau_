@@ -75,6 +75,12 @@ Ajouter un identifiant pour consulter une exécution précise, par exemple
 Pour déclencher un nouveau déploiement, suivre cette exécution et afficher son
 résumé dans la même console :
 
+Renseigner d'abord `GH_REPO=PROPRIETAIRE/DEPOT` dans le `.env` local pour cibler
+votre fork à chaque lancement. Une variable `GH_REPO` exportée est prioritaire
+sur ce fichier ; `CAFE_REPO` exportée sert de repli si `GH_REPO` n'est pas défini.
+Sans dépôt explicite, le script
+utilise le dépôt par défaut de GitHub CLI (`gh repo set-default`).
+
 ```bash
 python3 infra/scripts/suivre-deploiement.py --lancer
 ```
