@@ -13,6 +13,8 @@ Application Django pour gérer les clients, les achats de cafés, les cartes pr�
 - [Conception du projet](docs/conception.md)
 - [Migration de la V1 à la V2 et comparaison des soldes](docs/migration.md)
 - [Retrospéction V1](docs/retrospection-V1.md)
+- [Retrospéction V2](docs/retrospection-V2.md)
+- [Migration](docs/migration.md)
 - [ADR](docs/adr)
 - [Utilisation de l'IA](AI-USAGE.md)
 
@@ -47,13 +49,18 @@ docker compose down
 Les données PostgreSQL sont conservées dans les volumes. Ne pas ajouter `-v` :
 cette option supprime les volumes et leurs données.
 
-La [procédure de déploiement](docs/deploiement.md) précise les commandes Windows,
+Pour une installation indépendante sur AWS, suivre la
+[procédure complète d'hébergement depuis zéro](docs/hebergement-de-zero.md) :
+préparation Linux, Windows ou macOS, clés et secrets GitHub, runner local,
+déploiement du site puis transfert de PostgreSQL.
+
+Le [guide Docker local](docs/dockerDeploiement.md) précise les commandes Windows,
 les migrations automatiques, la création du premier compte, l’import SQLite V2,
 le changement de domaine et le développement séparé. Les procédures V1/V2 plus bas
 concernent les versions historiques et leurs données de démonstration.
 
 Pour transférer PostgreSQL local directement vers EC2 sans passer les données par
-GitHub, suivre la [procédure de transfert PostgreSQL](docs/transfert-postgres.md).
+GitHub, suivre la [procédure de transfert PostgreSQL](docs/hebergement-de-zero.md#9-préparer-puis-transférer-la-vraie-base-locale).
 
 Pour suivre le dernier déploiement de `main` puis afficher son résumé dans le
 terminal (DNS EC2, liens et commande de transfert), avec GitHub CLI connecté :
