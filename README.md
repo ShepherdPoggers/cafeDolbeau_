@@ -50,7 +50,7 @@ Les données PostgreSQL sont conservées dans les volumes. Ne pas ajouter `-v` :
 cette option supprime les volumes et leurs données.
 
 Pour une installation indépendante sur AWS, suivre la
-[procédure complète d'hébergement depuis zéro](docs/hebergement-de-zero.md) :
+[procédure complète d'hébergement depuis zéro](docs/deploiement.md) :
 préparation Linux, Windows ou macOS, clés et secrets GitHub, runner local,
 déploiement du site puis transfert de PostgreSQL.
 
@@ -60,7 +60,7 @@ le changement de domaine et le développement séparé. Les procédures V1/V2 pl
 concernent les versions historiques et leurs données de démonstration.
 
 Pour transférer PostgreSQL local directement vers EC2 sans passer les données par
-GitHub, suivre la [procédure de transfert PostgreSQL](docs/hebergement-de-zero.md#9-préparer-puis-transférer-la-vraie-base-locale).
+GitHub, suivre la [procédure de transfert PostgreSQL](docs/deploiement.md#9-préparer-puis-transférer-la-vraie-base-locale).
 
 Pour suivre le dernier déploiement de `main` puis afficher son résumé dans le
 terminal (DNS EC2, liens et commande de transfert), avec GitHub CLI connecté :

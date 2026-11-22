@@ -6,15 +6,47 @@ l'ordre. Les commandes communes sont en **Bash**, jamais dans PowerShell sauf
 mention explicite. Un environnement Python `.venv` n'est pas nécessaire pour les
 scripts d'infrastructure et de transfert : ils utilisent la bibliothèque standard.
 
-Navigation : [comptes](#1-comprendre-les-machines-et-préparer-les-comptes),
-[outils](#2-installer-les-outils), [dépôt et clé SSH](#3-créer-le-dépôt-personnel-et-la-clé-ssh),
-[Cloudflare](#4-préparer-le-domaine-et-cloudflare-tunnel),
-[AWS](#5-amorcer-aws-et-la-fédération-github),
-[secrets GitHub](#6-enregistrer-variables-clés-et-secrets-dans-github),
-[runner](#7-installer-et-démarrer-le-runner-linux-x64),
-[pipeline](#8-déployer-le-site-par-le-pipeline),
-[données](#9-préparer-puis-transférer-la-vraie-base-locale),
-[récupération](#10-diagnostic-reprise-et-restauration).
+## Table des matières
+
+- [1. Comprendre les machines et préparer les comptes](#1-comprendre-les-machines-et-préparer-les-comptes)
+  - [1.1. Où exécuter les commandes](#11-où-exécuter-les-commandes)
+  - [1.2. Comptes et droits](#12-comptes-et-droits)
+  - [1.3. Fiche de configuration](#13-fiche-de-configuration)
+- [2. Installer les outils](#2-installer-les-outils)
+  - [2.1. Ubuntu 24.04 x64](#21-ubuntu-2404-x64)
+  - [2.2. Windows x64 avec WSL2](#22-windows-x64-avec-wsl2)
+  - [2.3. macOS : CLIENT natif et RUNNER Ubuntu x64](#23-macos--client-natif-et-runner-ubuntu-x64)
+  - [2.4. Vérifications avant de continuer](#24-vérifications-avant-de-continuer)
+- [3. Créer le dépôt personnel et la clé SSH](#3-créer-le-dépôt-personnel-et-la-clé-ssh)
+  - [3.1. Copier le projet dans GitHub](#31-copier-le-projet-dans-github)
+  - [3.2. Cloner et définir les valeurs non secrètes](#32-cloner-et-définir-les-valeurs-non-secrètes)
+  - [3.3. Générer la clé qui servira au transfert](#33-générer-la-clé-qui-servira-au-transfert)
+- [4. Préparer le domaine et Cloudflare Tunnel](#4-préparer-le-domaine-et-cloudflare-tunnel)
+- [5. Amorcer AWS et la fédération GitHub](#5-amorcer-aws-et-la-fédération-github)
+  - [5.1. Ouvrir une session AWS temporaire](#51-ouvrir-une-session-aws-temporaire)
+  - [5.2. Aligner le sujet OIDC sur le code Terraform](#52-aligner-le-sujet-oidc-sur-le-code-terraform)
+  - [5.3. Créer l'état Terraform et le rôle du pipeline](#53-créer-létat-terraform-et-le-rôle-du-pipeline)
+- [6. Enregistrer variables, clés et secrets dans GitHub](#6-enregistrer-variables-clés-et-secrets-dans-github)
+  - [6.1. Créer l'environnement](#61-créer-lenvironnement)
+  - [6.2. Ajouter les variables d'environnement](#62-ajouter-les-variables-denvironnement)
+  - [6.3. Ajouter les secrets d'environnement](#63-ajouter-les-secrets-denvironnement)
+- [7. Installer et démarrer le runner Linux x64](#7-installer-et-démarrer-le-runner-linux-x64)
+- [8. Déployer le site par le pipeline](#8-déployer-le-site-par-le-pipeline)
+  - [8.1. Vérifier le code à déployer](#81-vérifier-le-code-à-déployer)
+  - [8.2. Lancer et suivre](#82-lancer-et-suivre)
+  - [8.3. Vérifier avant de transférer](#83-vérifier-avant-de-transférer)
+- [9. Préparer puis transférer la vraie base locale](#9-préparer-puis-transférer-la-vraie-base-locale)
+  - [9.1. Identifier la source avant de la démarrer](#91-identifier-la-source-avant-de-la-démarrer)
+  - [9.2. Arrêter les écritures et vérifier le schéma](#92-arrêter-les-écritures-et-vérifier-le-schéma)
+  - [9.3. Vérifier SSH et lancer le transfert](#93-vérifier-ssh-et-lancer-le-transfert)
+  - [9.4. Contrôler les données et basculer les utilisateurs](#94-contrôler-les-données-et-basculer-les-utilisateurs)
+- [10. Diagnostic, reprise et restauration](#10-diagnostic-reprise-et-restauration)
+  - [10.1. Erreurs fréquentes](#101-erreurs-fréquentes)
+  - [10.2. Logs du pipeline et du serveur](#102-logs-du-pipeline-et-du-serveur)
+  - [10.3. Clé d'hôte SSH modifiée](#103-clé-dhôte-ssh-modifiée)
+  - [10.4. Restaurer la sauvegarde distante d'avant import](#104-restaurer-la-sauvegarde-distante-davant-import)
+- [11. Exploitation après la première installation](#11-exploitation-après-la-première-installation)
+- [12. Liste de contrôle finale](#12-liste-de-contrôle-finale)
 
 Procédure vérifiée contre les fichiers du dépôt et les documentations officielles
 le **22 novembre 2026**. Les commandes ont été relues et vérifiées statiquement ;
