@@ -5,19 +5,19 @@
 - **Demande concernée :** §4.3.3
 
 ## Contexte
-Lorsqu'une mise à jour à lieu, sur le serveur il faut appliquer les différentes migrations à la BD.
+Lorsqu'une mise à jour a lieu sur le serveur, il faut appliquer les différentes migrations à la BD.
 
 ## Décision
-Les migrations s'appliquent automatiquement au démarage en production.
+Les migrations s'appliquent automatiquement au démarrage en production.
 
 
 ## Options écartées
 
 - Executer les migrations manuellement en SSH
     Puisque tout va être automatisé, ça ajoute une couche inutile. 
-- Executer les migrations au démarage du conteneur
-    À chaque redémarage de `app` on relancerait la vérification des migrations ce qui est inutile puisqu'on vérifie tandis que l'app n'a pas changé.
+- Executer les migrations au démarrage du conteneur
+    À chaque redémarrage de `app` on relancerait la vérification des migrations ce qui est inutile puisqu'on vérifie tandis que l'app n'a pas changé.
 
 
 ## Conséquences
-C'est un peu plus long à mettre en place mais lorsque ce sera fait, aucune interaction ne sera nécéssair.
+C'est un peu plus long à mettre en place, mais lorsque ce sera fait, aucune interaction ne sera nécessaire.

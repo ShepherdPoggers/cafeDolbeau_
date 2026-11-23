@@ -1,24 +1,21 @@
-# ADR-0016 — Une sauvegarde réel
+# ADR-0016 — Une sauvegarde réelle
 
 - **Statut :** Accepté  
 - **Date :** 2026-11-23
 - **Demande concernée :** §4.3.A8
 
 ## Contexte
-Des sauvegardes doivent pouvoir être exécuté
+Des sauvegardes de la base en production doivent pouvoir être exécuté et restauré. 
 
 
 ## Décision
-Les migrations s'appliquent automatiquement au démarage en production.
+Un script `sauvegardepostgres.py` automatise l'utilisation de `pg_dump` et archive la bd. Par la suite, elle peut être restaurée avec le script `` 
 
 
 ## Options écartées
-
-- Executer les migrations manuellement en SSH
-    Puisque tout va être automatisé, ça ajoute une couche inutile. 
-- Executer les migrations au démarage du conteneur
-    À chaque redémarage de `app` on relancerait la vérification des migrations ce qui est inutile puisqu'on vérifie tandis que l'app n'a pas changé.
+- Faire un `pg_dump` et un `pg_restore` manuellement.
+    Cela aurait impliqué des manipulations manuelles avec possibilité d'erreurs à chaque fois qu'on souhaite faire une sauvegarde de la BD.
 
 
 ## Conséquences
-C'est un peu plus long à mettre en place mais lorsque ce sera fait, aucune interaction ne sera nécéssair.
+L'opération s'effectue plus rapidement et est beaucoup plus simple à lancer. 
