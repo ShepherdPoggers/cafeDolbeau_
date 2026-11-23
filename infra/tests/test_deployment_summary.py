@@ -69,6 +69,39 @@ class RepositorySelectionTests(unittest.TestCase):
 
 
 class DeploymentSummaryTests(unittest.TestCase):
+    def test_transient_log_error_is_retried(self):
+        error = subprocess.CalledProcessError(1, 'gh', stderr='HTTP 502: Server Error')
+        with patch.object(watch, 'configured_repo', return_value=None), \
+                patch.object(watch.time, 'sleep') as sleep, \
+                patch.object(watch.subprocess, 'run', side_effect=[
+                    error, SimpleNamespace(stdout='logs'),
+                ]) as run:
+            result = watch.gh('run', 'view', '123', '--log', capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout, 'logs')
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(3)
+
+    def test_permanent_error_and_dispatch_are_never_retried(self):
+        cases = [(('run', 'view', '123'), 'HTTP 404: Not Found'),
+                 (('workflow', 'run', 'deploy.yml'), 'HTTP 502: Server Error')]
+        for args, message in cases:
+            with self.subTest(args=args), \
+                    patch.object(watch, 'configured_repo', return_value=None), \
+                    patch.object(watch.time, 'sleep') as sleep, \
+                    patch.object(watch.subprocess, 'run', side_effect=
+                                 subprocess.CalledProcessError(1, 'gh', stderr=message)) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    watch.gh(*args, capture_output=True, text=True, check=True)
+                run.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_persistent_log_error_shows_resume_command(self):
+        with patch.object(watch, 'gh', side_effect=[
+            SimpleNamespace(returncode=0), subprocess.CalledProcessError(1, 'gh'),
+        ]):
+            with self.assertRaisesRegex(SystemExit, 'suivre-deploiement.py 123'):
+                watch.main(['123'])
+
     def test_launch_waits_for_its_own_run(self):
         title = 'Déployer sur EC2 · feature/test · unique-token'
         with patch.object(watch.uuid, 'uuid4', return_value=SimpleNamespace(hex='unique-token')), \

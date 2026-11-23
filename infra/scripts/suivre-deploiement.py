@@ -54,7 +54,18 @@ def gh(*args, **kwargs):
     repository = configured_repo()
     if repository:
         command += ['--repo', repository]
-    return subprocess.run(command, cwd=ROOT, **kwargs)
+    # Reprendre uniquement les lectures : un dispatch ne doit jamais être doublé.
+    delays = (3, 6, 12) if args[:2] in (('run', 'list'), ('run', 'view')) else ()
+    for attempt in range(len(delays) + 1):
+        try:
+            return subprocess.run(command, cwd=ROOT, **kwargs)
+        except subprocess.CalledProcessError as error:
+            diagnostic = f'{error.stderr or ""}\n{error.stdout or ""}'
+            if attempt == len(delays) or not re.search(r'HTTP\s+5\d\d\b', diagnostic):
+                raise
+            delay = delays[attempt]
+            print(f'Erreur temporaire GitHub ; nouvelle lecture dans {delay} secondes…', flush=True)
+            time.sleep(delay)
 
 
 def launch(ref):
@@ -104,9 +115,16 @@ def main(argv=None):
         if not runs:
             raise SystemExit('Aucun déploiement de main trouvé.')
         run_id = runs[0]['databaseId']
+    resume = f'python3 infra/scripts/suivre-deploiement.py {run_id}'
+    print(f'Exécution GitHub : {run_id}. Pour reprendre le suivi : {resume}', flush=True)
     watched = gh('run', 'watch', str(run_id), '--exit-status')
-    result = gh('run', 'view', str(run_id), '--log', capture_output=True,
-                text=True, errors='replace', check=True)
+    try:
+        result = gh('run', 'view', str(run_id), '--log', capture_output=True,
+                    text=True, errors='replace', check=True)
+    except subprocess.CalledProcessError as error:
+        raise SystemExit('Impossible de récupérer les journaux GitHub. '
+                         'Cela ne permet pas de conclure que le déploiement a échoué. '
+                         f'Reprendre le suivi sans nouveau déploiement : {resume}') from error
     lines = summary_lines(result.stdout)
     if lines:
         print('\nRésumé du déploiement\n', flush=True)
