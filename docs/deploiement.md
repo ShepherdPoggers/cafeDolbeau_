@@ -48,6 +48,7 @@ scripts d'infrastructure et de transfert : ils utilisent la bibliothèque standa
   - [10.5. Sauvegarder la production et télécharger une copie](#105-sauvegarder-la-production-et-télécharger-une-copie)
   - [10.6. Restaurer la copie dans une base locale de test](#106-restaurer-la-copie-dans-une-base-locale-de-test)
   - [10.7. Vérification A8 : preuves à conserver](#107-vérification-a8--preuves-à-conserver)
+  - [10.8. Ouvrir l’application locale avec la base restaurée](#108-ouvrir-lapplication-locale-avec-la-base-restaurée)
 - [11. Exploitation après la première installation](#11-exploitation-après-la-première-installation)
 - [12. Liste de contrôle finale](#12-liste-de-contrôle-finale)
 
@@ -957,6 +958,26 @@ python3 infra/scripts/transferer-postgres.py \
   --project-name "$CAFE_SOURCE_PROJECT"
 ```
 
+Pour sélectionner directement un conteneur PostgreSQL source, par exemple `BLA`
+créé avec `restaurer-postgres.py --container BLA`, remplacer les options Compose
+par `--container` :
+
+```bash
+python3 infra/scripts/transferer-postgres.py \
+  --host "ubuntu@$CAFE_EC2_DNS" \
+  --confirm-host "ubuntu@$CAFE_EC2_DNS" \
+  --identity ~/.ssh/cafedolbeau \
+  --container BLA
+```
+
+Le conteneur source doit être démarré. Le script lit `POSTGRES_DB` et
+`POSTGRES_USER` dans ce conteneur (avec `postgres` comme valeur par défaut).
+Cette option ne lit pas le `.env` local et ne se combine pas avec `--pg-service`,
+`--project-name`, `-f` ou un autre `--env-file`. Si `lancer-restauration.py` utilise
+déjà ce volume, `BLA` est arrêté : sélectionner plutôt le nom du conteneur `db`
+de cette pile, visible avec `docker ps`. Ne pas démarrer deux PostgreSQL sur le
+même volume.
+
 **Cette commande remplace les objets présents dans l'export et leurs données sur
 le site. Elle ne fusionne pas deux historiques.** Les éventuelles tables distantes
 absentes de l'export ne sont pas supprimées. Garder les écritures locales arrêtées
@@ -1202,7 +1223,29 @@ ne démontre pas une restauration réussie.
 
 ### 10.6. Restaurer la copie dans une base locale de test
 
-**CLIENT — Bash et Docker**, depuis la racine du dépôt. Cette procédure restaure
+**CLIENT — Python 3.12 et Docker**, depuis la racine du dépôt. Le script restaure
+le fichier téléchargé et affiche les tables ainsi que les comptages des clients
+et des transactions :
+
+```bash
+python3 infra/scripts/restaurer-postgres.py \
+  backups/postgres/NOM_DU_FICHIER.dump
+```
+
+Remplacer le chemin par celui affiché par `sauvegarder-postgres.py`. Le script
+crée `cafe-restauration-a8`, attend PostgreSQL, restaure dans `cafe_restore` et
+vérifie les données. Il refuse une archive absente, vide ou sans en-tête de dump
+personnalisé, ainsi qu’un nom de conteneur déjà utilisé. Pour conserver un essai
+précédent, choisir un autre nom avec `--container cafe-restauration-a8-2`.
+
+Le conteneur est conservé pour l’inspection et les preuves, même après une erreur
+de restauration. Le script affiche les commandes de consultation des journaux et
+de nettoyage. Comparer les comptages affichés aux relevés faits en production au
+moment de la sauvegarde. La production et la base de développement ne sont pas
+modifiées.
+
+**Alternative manuelle — Bash et Docker.** Choisir le script ci-dessus ou les
+commandes suivantes pour un même essai. Cette procédure restaure
 la sauvegarde dans un nouveau PostgreSQL local, indépendant de la production et
 de la base de développement. Utiliser PostgreSQL 17, comme sur EC2.
 
@@ -1308,6 +1351,63 @@ ajouter ici la date, les résultats et le lien vers la vidéo ou les captures :
 
 Masquer les secrets et les données personnelles dans les preuves. Ne pas
 publier l’archive elle-même dans le dépôt ou la vidéo.
+
+### 10.8. Ouvrir l’application locale avec la base restaurée
+
+Après la restauration de la section 10.6, depuis CLIENT à la racine du dépôt :
+
+```bash
+python3 infra/scripts/lancer-restauration.py
+```
+
+Le lanceur vérifie que `cafe-restauration-a8` est bien le conteneur de test isolé,
+l’arrête pour éviter deux PostgreSQL sur un même volume, puis réutilise ce volume
+avec [docker/compose.restore.yaml](../docker/compose.restore.yaml). La pile
+`cafe-restauration-web` démarre PostgreSQL, applique les migrations du code local,
+collecte les fichiers statiques et démarre Django et nginx. Les opérations faites
+dans cette interface modifient la copie restaurée. Conserver les preuves de
+restauration avant de faire ces essais.
+
+Ouvrir **http://localhost:8001** et se connecter avec un compte présent dans la
+sauvegarde. La base locale habituelle et la production ne sont pas utilisées.
+Seul nginx publie un port, sur `127.0.0.1` ; PostgreSQL et Gunicorn restent sur
+un réseau Docker interne sans Cloudflare.
+
+Si la restauration utilisait un autre nom, ajouter `--container NOM_DU_CONTENEUR`.
+Pour choisir un autre port lors du premier lancement, ajouter `--port 8002`.
+Par exemple, pour ouvrir une seconde restauration nommée `BLA` pendant que le
+premier essai utilise le port 8001 :
+
+```bash
+python3 infra/scripts/lancer-restauration.py --container BLA --port 8002
+```
+
+Chaque conteneur source personnalisé reçoit un projet Compose et un fichier
+`.deploy/restauration-web-IDENTIFIANT.env` distincts. Utiliser un port libre pour
+chaque pile. Les commandes de journaux et d’arrêt propres à la pile sont affichées
+par le lanceur.
+
+Le lanceur conserve le volume, le port et une clé Django locale dans
+`.deploy/restauration-web.env`, exclu de Git, et refuse de changer silencieusement
+la base ou le port d’une configuration existante. Relancer la même commande pour
+redémarrer cette pile. Ce chemin sans identifiant concerne le conteneur par
+défaut `cafe-restauration-a8`.
+
+Pour consulter les journaux ou arrêter l’application, depuis la racine :
+
+```bash
+docker compose --project-name cafe-restauration-web \
+  --env-file .deploy/restauration-web.env \
+  -f docker/compose.restore.yaml logs --tail 100
+
+docker compose --project-name cafe-restauration-web \
+  --env-file .deploy/restauration-web.env \
+  -f docker/compose.restore.yaml down
+```
+
+Le volume PostgreSQL est déclaré externe et reste conservé après `down`.
+Ne pas redémarrer l’ancien conteneur `cafe-restauration-a8` pendant que la pile
+Web utilise son volume.
 
 ## 11. Exploitation après la première installation
 

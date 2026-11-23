@@ -13,6 +13,25 @@ SPEC.loader.exec_module(transfer)
 
 
 class TransferTests(unittest.TestCase):
+    def test_container_source_bypasses_compose_and_uses_container_database(self):
+        args = transfer.arguments(['--host', 'prod', '--confirm-host', 'prod', '--container', 'BLA'])
+        command = transfer.dump_command(args)
+        self.assertEqual(command[:5], ['docker', 'exec', 'BLA', 'sh', '-ec'])
+        self.assertIn('${POSTGRES_USER:-postgres}', command[-1])
+        self.assertIn('${POSTGRES_DB:-postgres}', command[-1])
+        self.assertNotIn('compose', command)
+
+    def test_invalid_or_ambiguous_container_source_never_connects(self):
+        for options in [['--container=-bad'], ['--container', 'BLA;bad'],
+                        ['--container', 'BLA', '--pg-service', 'local'],
+                        ['--container', 'BLA', '--project-name', 'other'],
+                        ['--container', 'BLA', '-f', 'other.yaml'],
+                        ['--container', 'BLA', '--env-file', 'other.env']]:
+            with self.subTest(options=options), patch.object(transfer.subprocess, 'run') as run:
+                with self.assertRaises(SystemExit):
+                    transfer.main(['--host', 'prod', '--confirm-host', 'prod', *options])
+                run.assert_not_called()
+
     def test_refuse_wrong_confirmation_and_option_injection(self):
         for host, confirm in [('ubuntu@prod', 'ubuntu@other'), ('-oProxyCommand=bad', '-oProxyCommand=bad')]:
             with self.subTest(host=host), patch.object(transfer.subprocess, 'run') as run:

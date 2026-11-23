@@ -21,7 +21,9 @@ def arguments(argv=None):
     parser.add_argument('--env-file', default='.env', help='Configuration Compose locale.')
     parser.add_argument('-f', '--compose-file', action='append', help='Fichier Compose local, répétable.')
     parser.add_argument('--project-name', help='Nom du projet Compose local si différent du défaut.')
-    parser.add_argument('--pg-service', help='Base hors Docker : service libpq local, avec .pgpass.')
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--pg-service', help='Base hors Docker : service libpq local, avec .pgpass.')
+    source.add_argument('--container', help='Conteneur PostgreSQL source, par exemple BLA (sans Compose).')
     args = parser.parse_args(argv)
     if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.@:-]*', args.host):
         parser.error('Destination SSH invalide ; utiliser un nom DNS, une IPv4 ou un alias SSH.')
@@ -31,6 +33,11 @@ def arguments(argv=None):
         parser.error('Port SSH invalide.')
     if args.pg_service and not re.fullmatch(r'[A-Za-z0-9_.-]+', args.pg_service):
         parser.error('Nom du service PostgreSQL invalide.')
+    if args.container:
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', args.container):
+            parser.error('Nom du conteneur PostgreSQL invalide.')
+        if args.project_name or args.compose_file or args.env_file != '.env':
+            parser.error('--container ne peut pas être combiné avec --project-name, -f ou --env-file.')
     return args
 
 
@@ -38,6 +45,10 @@ def dump_command(args):
     if args.pg_service:
         return ['pg_dump', '--no-password', '--format=custom', '--no-owner', '--no-acl',
                 '--dbname', f'service={args.pg_service}']
+    if args.container:
+        return ['docker', 'exec', args.container, 'sh', '-ec',
+                'exec pg_dump --no-password --format=custom --no-owner --no-acl '
+                '-U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"']
     command = ['docker', 'compose', '--env-file', args.env_file]
     for filename in args.compose_file or ['docker/compose.yaml']:
         command += ['-f', filename]

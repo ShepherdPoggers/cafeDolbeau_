@@ -1,0 +1,89 @@
+# Interface locale pour la base déjà restaurée par restaurer-postgres.py.
+name: cafe-restauration-web
+
+x-app-environment: &app-environment
+  DJANGO_SETTINGS_MODULE: config.settings
+  SECRET_KEY: ${RESTORE_SECRET_KEY:?Utiliser lancer-restauration.py}
+  DJANGO_DEBUG: "false"
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,[::1]
+  DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:${RESTORE_HTTP_PORT:-8001},http://127.0.0.1:${RESTORE_HTTP_PORT:-8001}
+  DJANGO_SECURE_SSL_REDIRECT: "false"
+  DJANGO_SESSION_COOKIE_SECURE: "false"
+  DJANGO_CSRF_COOKIE_SECURE: "false"
+  CAFE_DB_ENGINE: postgresql
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: cafe_restore
+  POSTGRES_USER: postgres
+  # La base du test utilise trust ; Django exige une valeur non vide.
+  POSTGRES_PASSWORD: restauration-locale-isolee
+
+services:
+  db:
+    image: postgres:17.9-bookworm
+    environment:
+      POSTGRES_DB: cafe_restore
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - restored_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "cafe_restore"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  init:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    environment: *app-environment
+    command: ["sh", "-ec", "python src/manage.py migrate --noinput && python src/manage.py collectstatic --noinput"]
+    volumes:
+      - staticfiles:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    environment: *app-environment
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "docker/healthcheck.py"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  proxy:
+    build:
+      context: ..
+      dockerfile: docker/proxy.Dockerfile
+    environment:
+      PUBLIC_SCHEME: http
+    networks:
+      - default
+      - frontend
+    ports:
+      - "127.0.0.1:${RESTORE_HTTP_PORT:-8001}:8080"
+    volumes:
+      - staticfiles:/app/staticfiles:ro
+    depends_on:
+      app:
+        condition: service_healthy
+
+networks:
+  default:
+    internal: true
+  frontend:
+
+volumes:
+  restored_data:
+    external: true
+    name: ${RESTORE_DB_VOLUME:?Utiliser lancer-restauration.py}
+  staticfiles:
