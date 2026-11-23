@@ -46,6 +46,8 @@ scripts d'infrastructure et de transfert : ils utilisent la bibliothèque standa
   - [10.3. Clé d'hôte SSH modifiée](#103-clé-dhôte-ssh-modifiée)
   - [10.4. Restaurer la sauvegarde distante d'avant import](#104-restaurer-la-sauvegarde-distante-davant-import)
   - [10.5. Sauvegarder la production et télécharger une copie](#105-sauvegarder-la-production-et-télécharger-une-copie)
+  - [10.6. Restaurer la copie dans une base locale de test](#106-restaurer-la-copie-dans-une-base-locale-de-test)
+  - [10.7. Vérification A8 : preuves à conserver](#107-vérification-a8--preuves-à-conserver)
 - [11. Exploitation après la première installation](#11-exploitation-après-la-première-installation)
 - [12. Liste de contrôle finale](#12-liste-de-contrôle-finale)
 
@@ -1163,6 +1165,8 @@ Ne pas supprimer cette sauvegarde pendant le diagnostic.
 **CLIENT — Python 3.12 et SSH**, depuis la racine du dépôt :
 
 ```bash
+export CAFE_EC2_DNS='DNS_PUBLIC_ACTUEL_EC2'
+
 python3 infra/scripts/sauvegarder-postgres.py \
   --host "ubuntu@$CAFE_EC2_DNS" \
   --identity ~/.ssh/cafedolbeau
@@ -1171,6 +1175,9 @@ python3 infra/scripts/sauvegarder-postgres.py \
 Remplacer `$CAFE_EC2_DNS` par le DNS ou l’IP actuels si cette variable n’est pas
 définie. L’accès SSH doit être autorisé depuis votre adresse IP et le compte
 `ubuntu` doit disposer de `sudo` sans mot de passe, comme pour le transfert.
+La production doit être déployée dans `/opt/cafedolbeau/current` et son service
+`db` doit être démarré. Le script utilise la configuration du serveur ; il ne
+nécessite ni PostgreSQL local en cours d’exécution, ni session AWS CLI active.
 Omettre `--identity` pour utiliser l’agent ou la configuration SSH. Le script
 accepte aussi `--port 22` et `--output-dir /chemin/vers/sauvegardes`.
 
@@ -1192,6 +1199,115 @@ Conserver la sortie indiquant les chemins, la taille et le SHA-256 comme preuve
 de sauvegarde. **Pour satisfaire A8, il faut ensuite restaurer la copie dans une
 base de test séparée et vérifier les données.** La validation de l’archive seule
 ne démontre pas une restauration réussie.
+
+### 10.6. Restaurer la copie dans une base locale de test
+
+**CLIENT — Bash et Docker**, depuis la racine du dépôt. Cette procédure restaure
+la sauvegarde dans un nouveau PostgreSQL local, indépendant de la production et
+de la base de développement. Utiliser PostgreSQL 17, comme sur EC2.
+
+Définir le chemin exact affiché par le script de sauvegarde ; remplacer
+`NOM_DU_FICHIER.dump` par le nom réel, sans sélectionner plusieurs archives :
+
+```bash
+CAFE_DUMP='backups/postgres/NOM_DU_FICHIER.dump'
+test -s "$CAFE_DUMP"
+```
+
+Continuer seulement si la commande réussit. Créer un conteneur dédié au test :
+
+```bash
+docker run -d \
+  --name cafe-restauration-a8 \
+  --network none \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_DB=cafe_restore \
+  postgres:17.9-bookworm
+```
+
+Le conteneur ne publie aucun port et n’a pas d’accès réseau. L’authentification
+`trust` est réservée à ce conteneur de test isolé. Si ce nom est déjà utilisé,
+vérifier le test précédent avant de le supprimer ou de choisir un autre nom.
+
+Attendre que PostgreSQL accepte les connexions, avec un délai maximal d’environ
+une minute. En cas d’échec, consulter `docker logs cafe-restauration-a8` avant de
+continuer :
+
+```bash
+(
+  for tentative in {1..30}; do
+    docker exec cafe-restauration-a8 \
+      pg_isready -U postgres -d cafe_restore && exit 0
+    sleep 2
+  done
+  echo 'PostgreSQL de test ne devient pas prêt.' >&2
+  exit 1
+)
+```
+
+Restaurer l’archive dans la base de test vide :
+
+```bash
+docker exec -i cafe-restauration-a8 \
+  pg_restore \
+  --exit-on-error \
+  --single-transaction \
+  --no-owner \
+  --no-acl \
+  -U postgres \
+  -d cafe_restore \
+  < "$CAFE_DUMP" \
+  && echo 'Restauration réussie'
+```
+
+Attendu : code de sortie `0` et message `Restauration réussie`. Les options
+`--no-owner` et `--no-acl` permettent la restauration avec le compte local de
+test sans recréer les comptes PostgreSQL de production. En cas d’échec, ne pas
+considérer A8 comme validé ; lire l’erreur avant de recommencer dans une base vide.
+
+Vérifier les tables et les données restaurées :
+
+```bash
+docker exec cafe-restauration-a8 \
+  psql -v ON_ERROR_STOP=1 -U postgres -d cafe_restore \
+  -c '\dt' \
+  -c 'SELECT COUNT(*) AS clients FROM "CafeDolbeau_client";' \
+  -c 'SELECT COUNT(*) AS transactions FROM "CafeDolbeau_transactioncafe";'
+```
+
+Comparer les comptages avec ceux relevés en production au moment de la
+sauvegarde. Une base sans clients n’est pas nécessairement un échec de
+restauration : les résultats doivent correspondre aux données réellement
+sauvegardées. Si des opérations ont été ajoutées depuis la sauvegarde, les
+comptages actuels de production peuvent avoir changé.
+
+Après avoir conservé les preuves, supprimer uniquement le conteneur de test et
+son volume anonyme :
+
+```bash
+docker rm -fv cafe-restauration-a8
+```
+
+Conserver le `.dump` dans un emplacement privé hors de Git. Il contient les
+données de production, notamment les informations des clients et les empreintes
+des mots de passe des comptes applicatifs.
+
+### 10.7. Vérification A8 : preuves à conserver
+
+La procédure ci-dessus décrit les actions à effectuer ; elle ne constitue pas
+une preuve qu’une sauvegarde a effectivement été restaurée. Après l’essai réel,
+ajouter ici la date, les résultats et le lien vers la vidéo ou les captures :
+
+- la commande `sauvegarder-postgres.py` et sa sortie indiquant les chemins,
+  la taille et le SHA-256 vérifié ;
+- le nom du conteneur local et de la base `cafe_restore`, montrant que la cible
+  est distincte de la production ;
+- la commande `pg_restore` et le message de réussite ;
+- les comptages des clients et des transactions restaurés, comparés aux relevés
+  de production au moment de la sauvegarde.
+
+Masquer les secrets et les données personnelles dans les preuves. Ne pas
+publier l’archive elle-même dans le dépôt ou la vidéo.
 
 ## 11. Exploitation après la première installation
 
@@ -1224,5 +1340,7 @@ ne démontre pas une restauration réussie.
 - [ ] La base source a été identifiée par son projet et ses comptages.
 - [ ] Les écritures locales sont arrêtées et le code source correspond à la version déployée.
 - [ ] Le chemin de sauvegarde distante a été conservé et le transfert a réussi.
+- [ ] Une sauvegarde de production a été téléchargée avec le script et son SHA-256 vérifié.
+- [ ] Cette sauvegarde a été restaurée dans une base locale de test ; les résultats et les preuves A8 sont conservés.
 - [ ] Les comptages, la connexion des utilisateurs et les accès métier ont été vérifiés.
 - [ ] Les utilisateurs travaillent désormais sur le site ; aucun import récurrent ne remplace leurs nouvelles opérations.
