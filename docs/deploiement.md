@@ -45,6 +45,7 @@ scripts d'infrastructure et de transfert : ils utilisent la bibliothèque standa
   - [10.2. Logs du pipeline et du serveur](#102-logs-du-pipeline-et-du-serveur)
   - [10.3. Clé d'hôte SSH modifiée](#103-clé-dhôte-ssh-modifiée)
   - [10.4. Restaurer la sauvegarde distante d'avant import](#104-restaurer-la-sauvegarde-distante-davant-import)
+  - [10.5. Sauvegarder la production et télécharger une copie](#105-sauvegarder-la-production-et-télécharger-une-copie)
 - [11. Exploitation après la première installation](#11-exploitation-après-la-première-installation)
 - [12. Liste de contrôle finale](#12-liste-de-contrôle-finale)
 
@@ -1156,6 +1157,41 @@ Le dossier `backups` distant est privé et conservé par les déploiements, mais
 reste sur le disque EC2 : ce n'est pas une sauvegarde indépendante contre la perte
 de ce disque. Définir une rétention et une copie externe selon vos besoins.
 Ne pas supprimer cette sauvegarde pendant le diagnostic.
+
+### 10.5. Sauvegarder la production et télécharger une copie
+
+**CLIENT — Python 3.12 et SSH**, depuis la racine du dépôt :
+
+```bash
+python3 infra/scripts/sauvegarder-postgres.py \
+  --host "ubuntu@$CAFE_EC2_DNS" \
+  --identity ~/.ssh/cafedolbeau
+```
+
+Remplacer `$CAFE_EC2_DNS` par le DNS ou l’IP actuels si cette variable n’est pas
+définie. L’accès SSH doit être autorisé depuis votre adresse IP et le compte
+`ubuntu` doit disposer de `sudo` sans mot de passe, comme pour le transfert.
+Omettre `--identity` pour utiliser l’agent ou la configuration SSH. Le script
+accepte aussi `--port 22` et `--output-dir /chemin/vers/sauvegardes`.
+
+Le script exécute `pg_dump` au format personnalisé dans le conteneur PostgreSQL
+de production, sans arrêter le site. Il valide la table des matières de l’archive
+avec `pg_restore --list`, conserve l’archive distante dans
+`/opt/cafedolbeau/backups/export-XXXXXXXX/production.dump`, puis la télécharge par
+SSH. Il vérifie la taille et le SHA-256 avant de publier la copie locale sous un
+nom unique dans `backups/postgres/`. Les sauvegardes sont privées (mode `0600`)
+et le dossier local par défaut est exclu de Git. Aucun mot de passe PostgreSQL
+n’est transmis en argument ou affiché.
+
+Un verrou empêche le chevauchement avec un déploiement ou un import. Si le
+téléchargement échoue ou si l’empreinte diffère, le fichier local partiel est
+supprimé ; la sauvegarde distante terminée reste disponible. Les sauvegardes
+réussies ne sont pas supprimées automatiquement : surveiller l’espace disque.
+
+Conserver la sortie indiquant les chemins, la taille et le SHA-256 comme preuve
+de sauvegarde. **Pour satisfaire A8, il faut ensuite restaurer la copie dans une
+base de test séparée et vérifier les données.** La validation de l’archive seule
+ne démontre pas une restauration réussie.
 
 ## 11. Exploitation après la première installation
 

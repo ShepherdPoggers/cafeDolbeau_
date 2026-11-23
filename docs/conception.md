@@ -73,35 +73,52 @@
 
 ### Déploiement avec nginx
 
-Le déploiement de production est défini dans [docker/compose.yaml](../docker/compose.yaml).
-Les conteneurs communiquent sur le réseau `default` créé par Compose. Seul le
-proxy nginx publie un port sur l’ordinateur : par défaut, `127.0.0.1:8000`
-redirige vers son port `8080`.
+Le déploiement AWS est défini dans
+[docker/compose.prod.yaml](../docker/compose.prod.yaml). Une seule instance EC2
+héberge les conteneurs et leurs volumes persistants. Le domaine public est
+publié par Cloudflare Tunnel ; son enregistrement DNS est un CNAME vers le tunnel.
+La configuration locale reste dans [docker/compose.yaml](../docker/compose.yaml).
 
 ```mermaid
 flowchart LR
-    navigateur["Navigateur<br/>http://localhost:8000"]
-
-    subgraph reseau["Réseau Compose : default"]
-        proxy["proxy : nginx<br/>port 8080"]
-        app["app : Gunicorn / Django<br/>port 8000"]
-        db["db : PostgreSQL<br/>port 5432"]
-        init["init : service ponctuel<br/>migrate puis collectstatic"]
-        secrets["secrets : service ponctuel<br/>préparation des secrets"]
-
-        proxy -->|"HTTP : app:8000"| app
-        app -->|"SQL : db:5432"| db
-        init -->|"Migrations"| db
+    subgraph internet["Internet"]
+        navigateur["Navigateurs des deux cafés<br/>et du propriétaire"]
+        cloudflare["Cloudflare<br/>Domaine public et terminaison HTTPS"]
+        admin["Administrateur<br/>Adresse IP autorisée"]
     end
 
-    subgraph volumes["Volumes nommés persistants"]
-        postgres_data[("postgres_data")]
-        staticfiles[("staticfiles")]
-        runtime_secrets[("runtime_secrets")]
+    subgraph aws["AWS — une instance EC2"]
+        sg["Groupe de sécurité<br/>Entrant : TCP 80 public<br/>TCP 22 depuis les IP autorisées<br/>Sortant : trafic autorisé"]
+        ssh["SSH sur EC2<br/>port 22"]
+
+        subgraph reseau["Réseau Compose : default"]
+            tunnel["cloudflared<br/>Connexion sortante vers Cloudflare"]
+            proxy["proxy : nginx<br/>8080 : trafic du tunnel<br/>8081 : accès HTTP public"]
+            app["app : Gunicorn / Django<br/>port interne 8000"]
+            db["db : PostgreSQL<br/>port interne 5432"]
+            init["init : service ponctuel<br/>migrate puis collectstatic"]
+            secrets["secrets : service ponctuel<br/>préparation des secrets"]
+        end
+
+        subgraph volumes["Volumes Docker persistants sur le disque EC2"]
+            postgres_data[("postgres_data")]
+            staticfiles[("staticfiles")]
+            runtime_secrets[("runtime_secrets")]
+        end
     end
 
-    navigateur -->|"HTTP : 127.0.0.1:8000 → proxy:8080"| proxy
-    db -->|"Lecture et écriture des données"| postgres_data
+    navigateur -->|"HTTPS : 443"| cloudflare
+    tunnel -.->|"Établit le tunnel chiffré sortant"| cloudflare
+    cloudflare -->|"Requêtes via le tunnel établi"| tunnel
+    tunnel -->|"HTTP : proxy:8080"| proxy
+    navigateur -->|"HTTP direct : IP EC2, port 80"| sg
+    sg -->|"80 vers proxy:8081<br/>Redirection HTTPS ; /healthz disponible"| proxy
+    admin -->|"SSH : 22"| sg
+    sg --> ssh
+    proxy -->|"HTTP : app:8000"| app
+    app -->|"SQL : db:5432"| db
+    init -->|"Migrations"| db
+    db -->|"Lecture et écriture"| postgres_data
     init -->|"Écriture : collectstatic"| staticfiles
     proxy -->|"Lecture seule : /static/"| staticfiles
     secrets -->|"Écriture"| runtime_secrets
@@ -110,18 +127,29 @@ flowchart LR
     init -.->|"Lecture seule"| runtime_secrets
 ```
 
-Une requête vers une page de l’application passe du navigateur à nginx, puis à
-Gunicorn, qui exécute Django. Django consulte PostgreSQL au besoin et la réponse
-revient par nginx. Les requêtes vers `/static/` sont servies directement par
-nginx depuis le volume `staticfiles`, notamment les feuilles de style de
-l’administration. Les ports de l’application et de PostgreSQL restent accessibles
-uniquement sur le réseau des conteneurs.
+Une requête vers le domaine public passe du navigateur à Cloudflare en HTTPS.
+Le conteneur `cloudflared` établit une connexion sortante chiffrée vers Cloudflare,
+qui transmet les requêtes par ce tunnel à nginx sur `proxy:8080`. Le tunnel ne
+nécessite aucun port entrant dédié sur EC2. nginx transmet les requêtes applicatives
+à Gunicorn, qui exécute Django ; Django consulte PostgreSQL au besoin. Les réponses
+reviennent par le même chemin. nginx sert directement `/static/` depuis le volume
+`staticfiles`.
 
-Au démarrage, `secrets` prépare les secrets, puis PostgreSQL démarre. Le service
-`init` attend que PostgreSQL soit sain avant d’appliquer les migrations et de
-collecter les fichiers statiques. Gunicorn attend la réussite de `init`, puis
-nginx attend que l’application soit saine. Les volumes conservent les données,
-les fichiers statiques et les secrets après `docker compose down` puis `up`.
+Le groupe de sécurité autorise le port 80 depuis Internet et le port 22 uniquement
+depuis les adresses IP administratives configurées. Le port 80 de l’instance est
+publié vers le port `8081` de nginx : `/healthz` permet les contrôles de santé,
+et les autres chemins redirigent vers le domaine HTTPS. Le HTTPS public est terminé
+chez Cloudflare ; le port 443 n’est pas ouvert sur EC2. Les ports de Gunicorn et de
+PostgreSQL restent internes au réseau Compose. La configuration des accès AWS
+est définie dans [infra/app/main.tf](../infra/app/main.tf).
+
+Lors du déploiement, `secrets` prépare les secrets, puis PostgreSQL démarre. Le
+service `init` applique les migrations et collecte les fichiers statiques avant le
+démarrage de Gunicorn, de nginx et du tunnel. Docker démarre au boot de l’instance
+et les services permanents utilisent `restart: unless-stopped`. Un redémarrage de
+l’instance réutilise les volumes et ne relance pas les services ponctuels terminés.
+Les données, fichiers statiques et secrets sont conservés tant que les volumes et
+le disque EC2 sont conservés.
 
 ### Clients
 
