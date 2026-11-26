@@ -13,9 +13,9 @@ Les migrations s'appliquent automatiquement au démarrage en production.
 
 ## Options écartées
 
-- Executer les migrations manuellement en SSH
+- Exécuter les migrations manuellement en SSH
     Puisque tout va être automatisé, ça ajoute une couche inutile. 
-- Executer les migrations au démarrage du conteneur
+- Exécuter les migrations au démarrage du conteneur
     À chaque redémarrage de `app` on relancerait la vérification des migrations ce qui est inutile puisqu'on vérifie tandis que l'app n'a pas changé.
 
 

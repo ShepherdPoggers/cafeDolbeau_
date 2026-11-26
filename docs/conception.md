@@ -6,7 +6,7 @@
 
 - [Implémentation](#implémentation)
   - [Structure du projet](#structure-du-projet)
-  - [Déploiement avec nginx](#déploiement-avec-nginx)
+  - [Déploiement AWS avec Cloudflare Tunnel et Nginx HTTPS](#déploiement-aws-avec-cloudflare-tunnel-et-nginx-https)
   - [Clients](#clients)
     - [Suppression d'un client](#suppression-dun-client)
     - [Fusion de deux clients](#fusion-de-deux-clients)
@@ -71,7 +71,7 @@
 ```
 
 
-### Déploiement avec nginx
+### Déploiement AWS avec Cloudflare Tunnel et Nginx HTTPS
 
 Le déploiement AWS est défini dans
 [docker/compose.prod.yaml](../docker/compose.prod.yaml). Une seule instance EC2
@@ -88,12 +88,17 @@ flowchart LR
     end
 
     subgraph aws["AWS — une instance EC2"]
-        sg["Groupe de sécurité<br/>Entrant : TCP 80 public<br/>TCP 22 depuis les IP autorisées<br/>Sortant : trafic autorisé"]
+        sg["Groupe de sécurité<br/>Entrant : TCP 80 et 443 publics<br/>TCP 22 depuis les IP autorisées<br/>Sortant : trafic autorisé"]
         ssh["SSH sur EC2<br/>port 22"]
+        certbot["Certbot : conteneur ponctuel<br/>Validation DNS-01 Cloudflare<br/>Renouvellement : timer systemd"]
+        certificats[("Certificat Let's Encrypt<br/>/opt/cafedolbeau/tls/served")]
 
         subgraph reseau["Réseau Compose : default"]
             tunnel["cloudflared<br/>Connexion sortante vers Cloudflare"]
-            proxy["proxy : nginx<br/>8080 : trafic du tunnel<br/>8081 : accès HTTP public"]
+            subgraph nginx["proxy : nginx — un seul conteneur"]
+                proxy["Application<br/>8443 : HTTPS interne du tunnel<br/>8080 : HTTP interne de transition"]
+                redirection["Entrées publiques de redirection<br/>8081 : HTTP ; /healthz disponible<br/>8444 : HTTPS ; toutes les URL redirigées"]
+            end
             app["app : Gunicorn / Django<br/>port interne 8000"]
             db["db : PostgreSQL<br/>port interne 5432"]
             init["init : service ponctuel<br/>migrate puis collectstatic"]
@@ -110,11 +115,15 @@ flowchart LR
     navigateur -->|"HTTPS : 443"| cloudflare
     tunnel -.->|"Établit le tunnel chiffré sortant"| cloudflare
     cloudflare -->|"Requêtes via le tunnel établi"| tunnel
-    tunnel -->|"HTTP : proxy:8080"| proxy
-    navigateur -->|"HTTP direct : IP EC2, port 80"| sg
-    sg -->|"80 vers proxy:8081<br/>Redirection HTTPS ; /healthz disponible"| proxy
+    tunnel -->|"HTTPS : proxy:8443<br/>Certificat et nom du domaine vérifiés"| proxy
+    navigateur -->|"Accès direct : IP EC2<br/>HTTP : 80 ou HTTPS : 443"| sg
+    sg -->|"80 vers proxy:8081<br/>443 vers proxy:8444"| redirection
+    redirection -.->|"308 vers le domaine HTTPS<br/>Le navigateur repasse par Cloudflare"| navigateur
     admin -->|"SSH : 22"| sg
     sg --> ssh
+    certbot -->|"Publication et rechargement nginx"| certificats
+    proxy -.->|"Certificat et clé en lecture seule"| certificats
+    redirection -.->|"Même certificat et clé en lecture seule"| certificats
     proxy -->|"HTTP : app:8000"| app
     app -->|"SQL : db:5432"| db
     init -->|"Migrations"| db
@@ -129,19 +138,35 @@ flowchart LR
 
 Une requête vers le domaine public passe du navigateur à Cloudflare en HTTPS.
 Le conteneur `cloudflared` établit une connexion sortante chiffrée vers Cloudflare,
-qui transmet les requêtes par ce tunnel à nginx sur `proxy:8080`. Le tunnel ne
+qui transmet les requêtes par ce tunnel à nginx en HTTPS sur `proxy:8443`.
+Cloudflared vérifie le certificat Let's Encrypt avec le domaine public configuré
+comme **Origin Server Name**. Le port `8080` reste disponible en interne pour la
+transition HTTP et les contrôles de santé. Le tunnel ne
 nécessite aucun port entrant dédié sur EC2. nginx transmet les requêtes applicatives
 à Gunicorn, qui exécute Django ; Django consulte PostgreSQL au besoin. Les réponses
 reviennent par le même chemin. nginx sert directement `/static/` depuis le volume
 `staticfiles`.
 
-Le groupe de sécurité autorise le port 80 depuis Internet et le port 22 uniquement
-depuis les adresses IP administratives configurées. Le port 80 de l’instance est
-publié vers le port `8081` de nginx : `/healthz` permet les contrôles de santé,
-et les autres chemins redirigent vers le domaine HTTPS. Le HTTPS public est terminé
-chez Cloudflare ; le port 443 n’est pas ouvert sur EC2. Les ports de Gunicorn et de
-PostgreSQL restent internes au réseau Compose. La configuration des accès AWS
-est définie dans [infra/app/main.tf](../infra/app/main.tf).
+Le groupe de sécurité autorise les ports 80 et 443 depuis Internet et le port 22
+uniquement depuis les adresses IP administratives configurées. Le port 80 de
+l’instance est publié vers `8081` : `/healthz` répond directement pour les contrôles
+de santé, et les autres chemins redirigent vers le domaine HTTPS. Le port public
+443 est publié vers `8444`, qui redirige toutes les URL vers ce même domaine avec
+un statut 308, en conservant le chemin et les paramètres. Le navigateur suit alors
+le chemin Cloudflare et tunnel ; nginx ne relaie pas lui-même la requête vers
+Cloudflare. L’entrée interne `8443` sert l’application sans redirection, ce qui
+évite une boucle. Les ports de Gunicorn et de PostgreSQL restent internes au
+réseau Compose. La configuration des accès AWS est définie dans
+[infra/app/main.tf](../infra/app/main.tf).
+
+Certbot obtient le certificat par validation DNS-01 et le timer systemd vérifie
+son renouvellement deux fois par jour. Les deux écoutes HTTPS de nginx utilisent
+la même paire certificat/clé montée en lecture seule et rechargée après
+renouvellement. Un accès HTTPS par IP affiche un avertissement avant la redirection,
+car le certificat couvre le domaine et non l’IP. Les redirections publiques ne
+fournissent pas d’accès de secours si Cloudflare est indisponible. Les détails DNS,
+TLS et de redirection figurent dans le
+[guide de déploiement](deploiement.md#42-redirections-des-accès-publics-ec2-vers-le-tunnel).
 
 Lors du déploiement, `secrets` prépare les secrets, puis PostgreSQL démarre. Le
 service `init` applique les migrations et collecte les fichiers statiques avant le

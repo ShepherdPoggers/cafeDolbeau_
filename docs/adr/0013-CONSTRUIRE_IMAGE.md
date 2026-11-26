@@ -11,7 +11,7 @@ Nous devons maintenant déployer l'application sur un serveur à l'aide de docke
 Construire l'application localement puis envoyer seulement l'image, le .env et le compose.yaml . 
 
 ## Options écartées
-Construire l'application sur le serveur. Si une mise à jour est fait, c'est tout le code à chaque fois qui doit être envoyé sur le serveur. On met alors beaucoup trop de chose inutile.
+Construire l'application sur le serveur. Si une mise à jour est faite, c'est tout le code à chaque fois qui doit être envoyé sur le serveur. On met alors beaucoup trop de choses inutiles.
 
 ## Conséquences
 

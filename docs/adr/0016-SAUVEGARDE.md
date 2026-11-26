@@ -5,11 +5,11 @@
 - **Demande concernée :** §4.3.A8
 
 ## Contexte
-Des sauvegardes de la base en production doivent pouvoir être exécuté et restauré. 
+Des sauvegardes de la base en production doivent pouvoir être exécutées et restaurées. 
 
 
 ## Décision
-Un script `sauvegardepostgres.py` automatise l'utilisation de `pg_dump` et archive la bd. Par la suite, elle peut être restaurée avec le script `` 
+La sauvegarde et la restauration du site web sont deux opérations distinctes. Le script `infra/scripts/sauvegarder-postgres.py` crée une archive de la base de données. Au besoin, `infra/scripts/restaurer-postgres.py` restaure cette sauvegarde, puis `infra/scripts/lancer-restauration.py` démarre le site web avec les données restaurées.
 
 
 ## Options écartées
@@ -18,4 +18,4 @@ Un script `sauvegardepostgres.py` automatise l'utilisation de `pg_dump` et archi
 
 
 ## Conséquences
-L'opération s'effectue plus rapidement et est beaucoup plus simple à lancer. 
+L'opération s'effectue plus rapidement et est beaucoup plus simple à lancer.
