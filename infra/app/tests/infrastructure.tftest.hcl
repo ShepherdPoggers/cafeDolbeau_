@@ -32,7 +32,15 @@ run "ubuntu_small_encrypted_disk" {
   }
   assert {
     condition     = aws_vpc_security_group_ingress_rule.http.from_port == 80 && aws_vpc_security_group_ingress_rule.http.to_port == 80
-    error_message = "Seul HTTP doit être ouvert publiquement."
+    error_message = "HTTP public doit rester limité au port TCP 80."
+  }
+  assert {
+    condition     = aws_vpc_security_group_ingress_rule.https.from_port == 443 && aws_vpc_security_group_ingress_rule.https.to_port == 443 && aws_vpc_security_group_ingress_rule.https.ip_protocol == "tcp" && aws_vpc_security_group_ingress_rule.https.cidr_ipv4 == "0.0.0.0/0"
+    error_message = "HTTPS public doit être ouvert sur le port TCP 443 uniquement."
+  }
+  assert {
+    condition     = alltrue([for rule in aws_vpc_security_group_ingress_rule.ssh : rule.cidr_ipv4 != "0.0.0.0/0" && rule.from_port == 22 && rule.to_port == 22])
+    error_message = "SSH doit rester restreint ; seuls les ports applicatifs 80 et 443 sont publics."
   }
 }
 

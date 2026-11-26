@@ -1,5 +1,6 @@
 """TLS_DOCKER_TESTS=1 python3 -m unittest discover -s infra/tests -p test_tls_integration.py -v"""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -113,3 +114,34 @@ class NginxTLSIntegrationTests(unittest.TestCase):
                         verify()
             docker('exec', proxy, 'wget', '-qO-', 'http://127.0.0.1:8080/healthz')
             docker('exec', proxy, 'wget', '-qO-', 'http://127.0.0.1:8081/healthz')
+
+            # Les ports publics mappent vers 8081 et 8444 ; 8443 reste réservé au tunnel.
+            # Aucun suivi des redirections : vérifier la destination exacte et le statut.
+            cases = []
+            for port in (8081, 8444):
+                for host in ('203.0.113.10', 'cafe.example.com', 'unexpected.example'):
+                    for path in ('/', '/connexion/?next=/', '/static/test.css?version=2', '/healthz'):
+                        status = 200 if port == 8081 and path == '/healthz' else 308
+                        location = 'https://cafe.example.com' + path if status == 308 else None
+                        cases.append((port, host, path, status, location))
+            for port in (8080, 8443):
+                for path in ('/', '/connexion/?next=/', '/healthz'):
+                    cases.append((port, 'cafe.example.com', path, 200, None))
+            script = '''import http.client, json, socket, ssl, sys
+for port, host, path, expected_status, expected_location in json.loads(sys.argv[1]):
+    if port in (8443, 8444):
+        connection = http.client.HTTPSConnection('cafe.example.com', port, timeout=10,
+                                                  context=ssl.create_default_context())
+        connection._create_connection = lambda address, timeout, source_address=None: socket.create_connection(('proxy', port), timeout)
+    else:
+        connection = http.client.HTTPConnection('proxy', port, timeout=10)
+    connection.request('GET', path, headers={'Host': host})
+    response = connection.getresponse()
+    actual = (response.status, response.getheader('Location'))
+    assert actual == (expected_status, expected_location), (port, host, path, actual)
+    if expected_status == 200:
+        assert response.read() == b'ok', (port, host, path)
+    connection.close()
+'''
+            run(['docker', 'run', '--rm', '--network', network, '--entrypoint', 'python',
+                 tls.CERTBOT_IMAGE, '-c', script, json.dumps(cases)])

@@ -512,7 +512,9 @@ Source : [création d'un tunnel géré à distance](https://developers.cloudflar
 Le tunnel utilise d’abord `http://proxy:8080` pour permettre une transition sans
 changer simultanément l’infrastructure et la route Cloudflare. Le déploiement
 prépare aussi `https://proxy:8443`, disponible uniquement dans le réseau Docker.
-Aucun port public 443 ni mécanisme de bascule DNS n’est ajouté.
+L'entrée publique HTTPS sur EC2:443 utilise une autre écoute Nginx, `8444`, qui
+redirige vers le domaine du tunnel (section 4.2). Aucun mécanisme de bascule DNS
+n'est ajouté.
 
 Dans Cloudflare, créer un **API Token** avec le droit **Zone → DNS → Edit**,
 limité à la zone contenant `PUBLIC_DOMAIN`. Ce jeton est distinct du jeton de
@@ -573,6 +575,70 @@ du certificat existant.
 
 Sources : [validation DNS Cloudflare dans Certbot](https://certbot-dns-cloudflare.readthedocs.io/en/stable/),
 [paramètres TLS du tunnel](https://developers.cloudflare.com/tunnel/reference/origin-parameters/).
+
+### 4.2. Redirections des accès publics EC2 vers le tunnel
+
+Le domaine `PUBLIC_DOMAIN` reste publié par le tunnel Cloudflare : son CNAME
+pointe vers la destination du tunnel (`UUID.cfargotunnel.com`), avec le proxy
+Cloudflare activé. Aucun enregistrement A supplémentaire ni Elastic IP n'est
+créé par cette configuration. Utiliser l'IP actuelle du résumé du déploiement
+pour les accès directs à EC2 ; elle peut changer après un arrêt/démarrage.
+
+Les deux chemins sont distincts :
+
+```text
+IP EC2:80  → Nginx:8081 → redirection HTTPS vers PUBLIC_DOMAIN
+IP EC2:443 → Nginx:8444 → redirection HTTPS vers PUBLIC_DOMAIN
+PUBLIC_DOMAIN → Cloudflare → tunnel → Nginx HTTPS:8443 → Django
+```
+
+| Entrée | Publication Docker | Comportement |
+| --- | --- | --- |
+| HTTP public | `80:8081` | Réponse 308 vers `https://PUBLIC_DOMAIN`, sauf `/healthz` qui répond directement pour les contrôles de déploiement |
+| HTTPS public | `443:8444` | Réponse 308 vers `https://PUBLIC_DOMAIN` pour toutes les URL, y compris `/healthz` |
+| HTTPS du tunnel | Aucune publication ; `proxy:8443` interne | Sert l'application et `/healthz` |
+| HTTP de transition | Aucune publication ; `proxy:8080` interne | Sert l'application et les contrôles internes |
+
+Les redirections conservent le chemin et les paramètres, par exemple
+`/connexion/?next=/`. Leur destination est fixée par `PUBLIC_DOMAIN`, quel que
+soit l'en-tête `Host` reçu. Nginx ne relaie pas la requête vers Cloudflare : il
+demande au navigateur de visiter le domaine public, qui emprunte alors le tunnel.
+La séparation des écoutes empêche de rediriger à nouveau les requêtes du tunnel.
+
+Le security group ouvre uniquement les ports applicatifs TCP 80 et 443 à
+Internet. SSH reste limité aux adresses configurées ; PostgreSQL, Gunicorn et
+les ports internes 8080, 8081, 8443 et 8444 ne sont pas ouverts dans ce groupe.
+Le même certificat Let’s Encrypt et le même renouvellement systemd couvrent les
+deux écoutes HTTPS de Nginx.
+
+Avec `http://IP_EC2`, le navigateur peut suivre la redirection sans avertissement.
+Avec `https://IP_EC2`, il signalera un nom de certificat incorrect **avant** de
+recevoir la redirection : le certificat couvre le domaine, pas l'adresse IP.
+Cette configuration reste dépendante de Cloudflare et ne donne pas d'accès de
+secours à l'application si Cloudflare est indisponible.
+
+Le pipeline vérifie la redirection publique HTTPS en joignant directement l'IP
+EC2 avec `curl --resolve`, tout en vérifiant le certificat avec le nom du domaine.
+Pour reproduire ce contrôle depuis CLIENT, remplacer `VOTRE_DOMAINE` et `IP_EC2`
+par les valeurs du dernier déploiement :
+
+```bash
+curl --noproxy '*' --resolve 'VOTRE_DOMAINE:443:IP_EC2' \
+  --max-time 10 --dump-header - --output /dev/null \
+  'https://VOTRE_DOMAINE/connexion/?next=/'
+```
+
+Le résultat attendu est un statut **308** avec l'en-tête
+`Location: https://VOTRE_DOMAINE/connexion/?next=/`. Ne pas ajouter `--location` :
+ce contrôle doit examiner la redirection, sans la suivre vers Cloudflare.
+L'URL publique du domaine doit ensuite continuer à afficher l'application via
+le tunnel. L'ouverture de 443 est appliquée par Terraform ; le déploiement
+protège toujours l'instance et ses disques contre leur remplacement.
+
+**Bonus DNS/HTTPS :** les redirections 80/443 et le certificat sont présents,
+mais le critère exigeant un enregistrement **A vers EC2** n'est pas rempli par ce
+mode utilisant un CNAME de tunnel. Ne pas présenter cette configuration seule
+comme satisfaisant l'intégralité du bonus.
 
 
 ## 5. Amorcer AWS et la fédération GitHub

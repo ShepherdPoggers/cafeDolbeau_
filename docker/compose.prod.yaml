@@ -145,6 +145,7 @@ services:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN requis}
     ports:
     - 0.0.0.0:80:8081
+    - 0.0.0.0:443:8444
     volumes:
     - staticfiles:/app/staticfiles:ro
     - type: bind

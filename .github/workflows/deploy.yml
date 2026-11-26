@@ -140,6 +140,17 @@ jobs:
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 "http://$ip/healthz" > /dev/null
           location=$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{redirect_url}' "http://$ip/")
           test "$location" = "https://$PUBLIC_DOMAIN/"
+          # Joindre EC2 directement, tout en vérifiant le certificat avec le nom public.
+          # Ne pas suivre la redirection : sa destination passe ensuite par le tunnel.
+          headers=$(mktemp)
+          status=$(curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 \
+            --noproxy '*' --resolve "$PUBLIC_DOMAIN:443:$ip" \
+            --dump-header "$headers" -o /dev/null -w '%{http_code}' \
+            "https://$PUBLIC_DOMAIN/connexion/?next=/")
+          test "$status" = 308
+          location=$(awk 'tolower($1) == "location:" {sub(/\r$/, "", $2); print $2}' "$headers")
+          rm -f "$headers"
+          test "$location" = "https://$PUBLIC_DOMAIN/connexion/?next=/"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 "https://$PUBLIC_DOMAIN/healthz" > /dev/null
 
       - name: 'DNS EC2 : ${{ steps.infrastructure.outputs.public_dns }}'

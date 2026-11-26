@@ -77,8 +77,10 @@ class ProductionConfigTests(unittest.TestCase):
             self.assertFalse(any('build' in s for s in services.values()))
             self.assertNotIn('ports', services['app'])
             self.assertNotIn('ports', services['db'])
-            self.assertEqual(services['proxy']['ports'][0]['published'], '80')
-            self.assertEqual(len(services['proxy']['ports']), 1)
+            self.assertEqual({(p['host_ip'], p['published'], p['target'])
+                              for p in services['proxy']['ports']},
+                             {('0.0.0.0', '80', 8081), ('0.0.0.0', '443', 8444)})
+            self.assertEqual(len(services['proxy']['ports']), 2)
             tls_mount = next(v for v in services['proxy']['volumes'] if v['target'] == '/etc/nginx/tls')
             self.assertTrue(tls_mount['read_only'])
             self.assertFalse(tls_mount['bind']['create_host_path'])
