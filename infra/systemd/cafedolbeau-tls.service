@@ -1,0 +1,12 @@
+[Unit]
+Description=Renouveler le certificat Let's Encrypt de Cafe Dolbeau
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/cafedolbeau/tls/tls.py renew
+TimeoutStartSec=35min

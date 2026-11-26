@@ -507,6 +507,74 @@ pouvoir consulter publiquement. Le tunnel peut rester **Inactive/Down** à ce st
 ce qui est normal avant le démarrage du connecteur sur EC2.
 Source : [création d'un tunnel géré à distance](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/).
 
+### 4.1. Certificat Let’s Encrypt sur Nginx
+
+Le tunnel utilise d’abord `http://proxy:8080` pour permettre une transition sans
+changer simultanément l’infrastructure et la route Cloudflare. Le déploiement
+prépare aussi `https://proxy:8443`, disponible uniquement dans le réseau Docker.
+Aucun port public 443 ni mécanisme de bascule DNS n’est ajouté.
+
+Dans Cloudflare, créer un **API Token** avec le droit **Zone → DNS → Edit**,
+limité à la zone contenant `PUBLIC_DOMAIN`. Ce jeton est distinct du jeton de
+connexion du tunnel. Le conserver dans le secret GitHub
+`CLOUDFLARE_DNS_API_TOKEN`. Ajouter aussi la variable GitHub `LETSENCRYPT_EMAIL`
+avec l’adresse de contact pour le compte ACME. Si la zone contient des règles
+CAA, elles doivent autoriser Let’s Encrypt (`letsencrypt.org`).
+
+Certbot utilise la validation DNS-01 : il crée puis retire un enregistrement TXT
+`_acme-challenge`, sans modifier le CNAME du site. Au premier déploiement de chaque
+domaine, le script teste une émission et un renouvellement à blanc dans staging,
+puis obtient un certificat de production. Les certificats staging restent séparés
+et ne sont jamais servis par Nginx. Un échec de préparation interrompt le
+déploiement avant l’arrêt des services existants.
+
+Après un déploiement réussi, dans **Networking → Tunnels → votre tunnel →
+Published application routes**, modifier la route existante :
+
+- Type : **HTTPS** ; URL : **`proxy:8443`**.
+- Dans les paramètres TLS, **Origin Server Name** : le nom exact de `PUBLIC_DOMAIN`
+  (par exemple `cafe.votre-domaine.ca`, sans protocole ni port).
+- **No TLS Verify** : désactivé. Ne pas contourner la vérification du certificat.
+
+Ouvrir ensuite `https://VOTRE_DOMAINE/healthz` et l’application. Le chemin devient
+**navigateur → Cloudflare → tunnel → Nginx HTTPS → Django**. En cas de problème de
+transition, remettre temporairement la route sur `http://proxy:8080` et examiner
+les journaux ; les deux écoutes internes restent disponibles.
+
+Sur EC2, les fichiers persistants se trouvent sous `/opt/cafedolbeau/tls` : compte
+ACME, paramètres de renouvellement, jeton privé et journaux Certbot. Nginx reçoit
+uniquement `served/` en lecture seule, avec une paire certificat/clé lisible par
+son groupe. Ne pas supprimer ce dossier lors du nettoyage des versions et ne pas
+copier ses clés dans le dépôt ou une image Docker.
+
+Le timer systemd vérifie le renouvellement deux fois par jour, avec un délai
+aléatoire d’au plus une heure. Il partage le verrou du déploiement. Une nouvelle
+paire est vérifiée (autorité, domaine, validité et correspondance de clé), puis
+publiée avant `nginx -t` et le rechargement. En cas d’échec, le lien vers la paire
+précédente est restauré ; aucun rechargement n’a lieu si la validation échoue.
+Une paire inchangée ne provoque pas de rechargement.
+
+**EC2 — diagnostic et renouvellement manuel :**
+
+```bash
+sudo systemctl list-timers cafedolbeau-tls.timer
+sudo journalctl -u cafedolbeau-tls.service --since '2 days ago'
+sudo python3 /opt/cafedolbeau/tls/tls.py dry-run
+sudo systemctl start cafedolbeau-tls.service
+```
+
+`dry-run` teste le renouvellement auprès de staging sans publier son certificat.
+Les détails Certbot restent dans les dossiers privés
+`/opt/cafedolbeau/tls/production/logs` et `staging/logs`. Un échec du service est
+visible dans systemd ; aucune notification externe n’est configurée. Pour tourner
+le jeton DNS, modifier le secret GitHub puis redéployer : sa copie privée sur EC2
+sera mise à jour. En cas d’échec, corriger le jeton et redéployer avant expiration
+du certificat existant.
+
+Sources : [validation DNS Cloudflare dans Certbot](https://certbot-dns-cloudflare.readthedocs.io/en/stable/),
+[paramètres TLS du tunnel](https://developers.cloudflare.com/tunnel/reference/origin-parameters/).
+
+
 ## 5. Amorcer AWS et la fédération GitHub
 
 ### 5.1. Ouvrir une session AWS temporaire
@@ -625,6 +693,7 @@ Dans **Settings → Environments → production → Environment variables**, cli
 | `AWS_ROLE_ARN` | ARN complet, sans guillemets | `CAFE_ROLE_ARN`, section 5 |
 | `TF_STATE_BUCKET` | Nom du bucket, sans `s3://` | `CAFE_STATE_BUCKET`, section 5 |
 | `PUBLIC_DOMAIN` | `cafe.votre-domaine.ca`, sans protocole ni chemin | Route Cloudflare |
+| `LETSENCRYPT_EMAIL` | Adresse courriel de contact ACME | Responsable du domaine |
 | `SSH_ALLOWED_CIDRS` | Tableau JSON, par exemple `["203.0.113.42/32"]` | IPv4 publique réelle de CLIENT |
 | `SSH_PUBLIC_KEY` | Ligne complète `ssh-ed25519 AAAA… commentaire` | `~/.ssh/cafedolbeau.pub` sur CLIENT |
 
@@ -656,6 +725,7 @@ Dans **Settings → Environments → production → Environment secrets**, cliqu
 | `SECRET_KEY` | Secret Django sur une ligne, au moins 32 caractères | Générer avec la commande Python ci-dessous, puis conserver dans le gestionnaire de mots de passe |
 | `POSTGRES_PASSWORD` | Secret distinct, une ligne, au moins 32 caractères | Générer une deuxième valeur de 64 caractères ; ne pas réutiliser la précédente |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Jeton seul, sans commande autour | Tunnel de la section 4 |
+| `CLOUDFLARE_DNS_API_TOKEN` | Jeton API limité à DNS Edit sur la zone | Section 4.1 |
 
 **CLIENT — terminal Ubuntu, WSL ou macOS.** Pour la première installation,
 exécuter cette commande afin de générer `SECRET_KEY` :
@@ -1052,7 +1122,7 @@ pourrait remplacer les transactions saisies depuis la mise en ligne.
 | Erreur OIDC / `AssumeRoleWithWebIdentity` | Vérifier `AWS_ROLE_ARN`, `production`, les deux ID GitHub et la configuration OIDC de la section 5.2. Le rôle doit faire confiance au sujet exact du dépôt avec ses ID ; ne pas ajouter de joker. |
 | Secret ou variable manquant | Vérifier l'orthographe et l'environnement `production`, les trois secrets et les six variables. Éviter les valeurs vides, retours à la ligne et noms écrits dans le mauvais dépôt. |
 | Docker « permission denied » sur RUNNER | Reconnexion au groupe Docker, vérifier `docker info` sans sudo, puis redémarrer le runner. Sous WSL2, vérifier Docker Desktop et son intégration Ubuntu. |
-| Tunnel Inactive / erreur 502 | Vérifier jeton, domaine et service `http://proxy:8080`. Consulter les logs `cloudflared`, `proxy`, `app` sur EC2. Ne pas lancer le même connecteur sur un autre ordinateur sans intention explicite. |
+| Tunnel Inactive / erreur 502 | Vérifier jeton, domaine et service `https://proxy:8443` après la transition (ou `http://proxy:8080` avant). Vérifier aussi Origin Server Name et le certificat Nginx. Consulter les logs `cloudflared`, `proxy`, `app` sur EC2. Ne pas lancer le même connecteur sur un autre ordinateur sans intention explicite. |
 | `service "db" is not running` | Retrouver le projet/contexte source avec la section 9.1 ; démarrer son `db` existant et vérifier les comptages. Ne pas créer une base neuve au hasard. |
 | Avertissement local `CLOUDFLARE_TUNNEL_TOKEN` non défini | Ce seul avertissement n'empêche pas l'export de `db`. Le jeton de production reste dans les secrets GitHub ; ne pas le copier localement juste pour supprimer l'avertissement. |
 | SSH expire / connexion refusée | Vérifier le DNS du dernier résumé, l'état EC2 et `SSH_ALLOWED_CIDRS`. Une IP publique modifiée exige de mettre à jour la variable GitHub et de redéployer pour appliquer la règle réseau. |
@@ -1435,7 +1505,8 @@ Web utilise son volume.
 - [ ] Les six variables et trois secrets existent dans `production`.
 - [ ] La clé privée reste sur CLIENT et l'agent SSH peut l'utiliser.
 - [ ] Le runner est Ubuntu Linux x64 avec Docker utilisable sans `sudo`.
-- [ ] Le tunnel publie le bon domaine vers `http://proxy:8080`.
+- [ ] Le tunnel publie le bon domaine vers `https://proxy:8443`, avec Origin Server Name et vérification TLS activée.
+- [ ] Le timer `cafedolbeau-tls.timer` est actif et le renouvellement à blanc fonctionne.
 - [ ] Le pipeline est réussi et le résumé indique le SHA, l'instance et le DNS.
 - [ ] La base source a été identifiée par son projet et ses comptages.
 - [ ] Les écritures locales sont arrêtées et le code source correspond à la version déployée.

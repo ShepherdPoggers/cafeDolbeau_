@@ -52,7 +52,10 @@ cette option supprime les volumes et leurs données.
 Pour une installation indépendante sur AWS, suivre la
 [procédure complète d'hébergement depuis zéro](docs/deploiement.md) :
 préparation Linux, Windows ou macOS, clés et secrets GitHub, runner local,
-déploiement du site puis transfert de PostgreSQL.
+déploiement du site puis transfert de PostgreSQL. Le déploiement AWS prépare un
+certificat Let’s Encrypt pour Nginx avec renouvellement automatique ; suivre la
+[transition du tunnel vers HTTPS](docs/deploiement.md#41-certificat-lets-encrypt-sur-nginx)
+après le premier déploiement.
 
 Le [guide Docker local](docs/dockerDeploiement.md) précise les commandes Windows,
 les migrations automatiques, la création du premier compte, l’import SQLite V2,

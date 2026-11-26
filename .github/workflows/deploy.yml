@@ -41,6 +41,7 @@ jobs:
       TF_VAR_ssh_public_keys: ${{ vars.SSH_PUBLIC_KEYS || '[]' }}
       TF_IN_AUTOMATION: 'true'
       PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+      LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +77,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
         run: python3 infra/scripts/prepare-release.py
 
       - name: Vérifier les fichiers techniques
@@ -91,7 +93,10 @@ jobs:
           docker buildx build --platform linux/amd64 --load -f docker/proxy.prod.Dockerfile -t "cafe-dolbeau-proxy:$IMAGE_TAG" .
           docker save "cafe-dolbeau-app:$IMAGE_TAG" "cafe-dolbeau-proxy:$IMAGE_TAG" | gzip -1 > .deploy/release/images.tar.gz
           cd .deploy/release
-          sha256sum .env compose.yaml deploy.sh images.tar.gz > SHA256SUMS
+          sha256sum .env compose.yaml deploy.sh images.tar.gz tls.py tls.json cloudflare.ini cafedolbeau-tls.service cafedolbeau-tls.timer > SHA256SUMS
+
+      - name: Vérifier Nginx HTTPS dans un réseau isolé
+        run: TLS_DOCKER_TESTS=1 python3 -m unittest discover -s infra/tests -p test_tls_integration.py -v
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:

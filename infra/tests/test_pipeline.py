@@ -45,10 +45,14 @@ class ProductionConfigTests(unittest.TestCase):
     def prepare(self, folder, secrets):
         (folder / 'docker').mkdir()
         (folder / 'infra/scripts').mkdir(parents=True)
-        for relative in ('docker/compose.prod.yaml', 'infra/scripts/deploy.sh'):
+        (folder / 'infra/systemd').mkdir()
+        for relative in ('docker/compose.prod.yaml', 'infra/scripts/deploy.sh', 'infra/scripts/tls.py',
+                         'infra/systemd/cafedolbeau-tls.service', 'infra/systemd/cafedolbeau-tls.timer'):
             (folder / relative).write_bytes((ROOT / relative).read_bytes())
         return subprocess.run(['python3', str(ROOT / 'infra/scripts/prepare-release.py')], cwd=folder,
                               env=os.environ | {'SECRET_KEY': '', 'POSTGRES_PASSWORD': '', 'CLOUDFLARE_TUNNEL_TOKEN': '',
+                                                'CLOUDFLARE_DNS_API_TOKEN': 'dns-test-token',
+                                                'LETSENCRYPT_EMAIL': 'admin@example.com',
                                                 'IMAGE_TAG': 'a' * 40, 'PUBLIC_DOMAIN': 'cafe.example.com'} | secrets,
                               text=True, capture_output=True)
 
@@ -74,6 +78,12 @@ class ProductionConfigTests(unittest.TestCase):
             self.assertNotIn('ports', services['app'])
             self.assertNotIn('ports', services['db'])
             self.assertEqual(services['proxy']['ports'][0]['published'], '80')
+            self.assertEqual(len(services['proxy']['ports']), 1)
+            tls_mount = next(v for v in services['proxy']['volumes'] if v['target'] == '/etc/nginx/tls')
+            self.assertTrue(tls_mount['read_only'])
+            self.assertFalse(tls_mount['bind']['create_host_path'])
+            self.assertNotIn('dns-test-token', (folder / '.deploy/release/.env').read_text())
+            self.assertEqual((folder / '.deploy/release/cloudflare.ini').stat().st_mode & 0o777, 0o600)
             self.assertEqual(services['cloudflared']['ports'][0]['host_ip'], '127.0.0.1')
             self.assertEqual(services['app']['environment']['DJANGO_DEBUG'], 'false')
             self.assertEqual(services['app']['environment']['DJANGO_SESSION_COOKIE_SECURE'], 'true')
@@ -96,6 +106,17 @@ class ProductionConfigTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn('private-token', result.stdout + result.stderr)
 
+    def test_dns_token_and_acme_email_are_required_without_disclosure(self):
+        for invalid in ({'CLOUDFLARE_DNS_API_TOKEN': ''},
+                        {'CLOUDFLARE_DNS_API_TOKEN': 'private-token\nINJECT=value'},
+                        {'LETSENCRYPT_EMAIL': ''}, {'LETSENCRYPT_EMAIL': 'invalid'}):
+            content = {'SECRET_KEY': 's' * 64, 'POSTGRES_PASSWORD': 'p' * 48,
+                       'CLOUDFLARE_TUNNEL_TOKEN': 'test-token'} | invalid
+            with self.subTest(invalid=list(invalid)), tempfile.TemporaryDirectory() as folder:
+                result = self.prepare(Path(folder), content)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('private-token', result.stdout + result.stderr)
+
 
 class MigrationFailureTests(unittest.TestCase):
     def test_failed_migration_never_starts_app_or_promotes_release(self):
@@ -105,6 +126,9 @@ class MigrationFailureTests(unittest.TestCase):
             release.mkdir(parents=True)
             binaries = root / 'bin'
             binaries.mkdir()
+            python = binaries / 'python3'
+            python.write_text('#!/bin/sh\nexit 0\n')
+            python.chmod(0o755)
             docker = binaries / 'docker'
             docker.write_text('''#!/bin/bash
 echo "$*" >> "$COMMAND_LOG"

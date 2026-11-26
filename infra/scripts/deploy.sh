@@ -29,12 +29,14 @@ fi
 
 # Télécharger toutes les dépendances avant l'interruption de service.
 "${compose[@]}" pull db cloudflared
+python3 tls.py prepare --release "$PWD"
 "${compose[@]}" stop cloudflared proxy app
 "${compose[@]}" run --rm --no-deps secrets
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 180 db
 "${compose[@]}" run --rm --no-deps init
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 240 app
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 proxy cloudflared
+python3 tls.py check --release "$PWD"
 
 # cloudflared n'inclut pas de shell : son endpoint de métriques fournit la readiness.
 for attempt in $(seq 1 60); do
@@ -48,6 +50,11 @@ curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 
 release="$PWD"
 ln -sfn "$release" /opt/cafedolbeau/current.new
 mv -Tf /opt/cafedolbeau/current.new /opt/cafedolbeau/current
+install -m 0600 tls.py /opt/cafedolbeau/tls/tls.py
+install -m 0644 cafedolbeau-tls.service cafedolbeau-tls.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now cafedolbeau-tls.timer
+rm -f cloudflare.ini
 rm -f images.tar.gz old-config.json new-config.json
 # Les versions arrêtées ne contiennent plus d'archives ni de copies du .env.
 find /opt/cafedolbeau/releases -mindepth 1 -maxdepth 1 -type d ! -path "$release" -exec rm -rf -- {} +

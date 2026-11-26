@@ -3,6 +3,7 @@
 .agents
 .codex
 .aws
+.deploy
 .ssh
 **/*.pem
 **/*.key

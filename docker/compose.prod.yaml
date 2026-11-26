@@ -147,6 +147,12 @@ services:
     - 0.0.0.0:80:8081
     volumes:
     - staticfiles:/app/staticfiles:ro
+    - type: bind
+      source: /opt/cafedolbeau/tls/served
+      target: /etc/nginx/tls
+      read_only: true
+      bind:
+        create_host_path: false
     depends_on:
       app:
         condition: service_healthy
