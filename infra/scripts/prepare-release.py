@@ -32,7 +32,7 @@ def main():
         private[name] = value
     if not re.fullmatch(r"[A-Za-z0-9_-]+", private['CLOUDFLARE_DNS_API_TOKEN']):
         raise ValueError('CLOUDFLARE_DNS_API_TOKEN doit être un jeton API Cloudflare valide.')
-    email = os.environ.get('LETSENCRYPT_EMAIL', '')
+    email = os.environ.get('LETSENCRYPT_EMAIL', '').strip()
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         raise ValueError('LETSENCRYPT_EMAIL doit être une adresse courriel valide.')
     folder = Path(".deploy/release")

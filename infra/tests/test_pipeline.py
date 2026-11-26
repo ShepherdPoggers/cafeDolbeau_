@@ -109,13 +109,24 @@ class ProductionConfigTests(unittest.TestCase):
     def test_dns_token_and_acme_email_are_required_without_disclosure(self):
         for invalid in ({'CLOUDFLARE_DNS_API_TOKEN': ''},
                         {'CLOUDFLARE_DNS_API_TOKEN': 'private-token\nINJECT=value'},
-                        {'LETSENCRYPT_EMAIL': ''}, {'LETSENCRYPT_EMAIL': 'invalid'}):
+                        {'LETSENCRYPT_EMAIL': ''}, {'LETSENCRYPT_EMAIL': 'invalid'},
+                        {'LETSENCRYPT_EMAIL': 'admin@exa\nmple.com'}):
             content = {'SECRET_KEY': 's' * 64, 'POSTGRES_PASSWORD': 'p' * 48,
                        'CLOUDFLARE_TUNNEL_TOKEN': 'test-token'} | invalid
             with self.subTest(invalid=list(invalid)), tempfile.TemporaryDirectory() as folder:
                 result = self.prepare(Path(folder), content)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn('private-token', result.stdout + result.stderr)
+
+    def test_acme_email_trims_surrounding_pasted_whitespace(self):
+        content = {'SECRET_KEY': 's' * 64, 'POSTGRES_PASSWORD': 'p' * 48,
+                   'CLOUDFLARE_TUNNEL_TOKEN': 'test-token',
+                   'LETSENCRYPT_EMAIL': ' \tadmin@example.com\r\n'}
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.prepare(Path(folder), content)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = json.loads((Path(folder) / '.deploy/release/tls.json').read_text())
+            self.assertEqual(config['email'], 'admin@example.com')
 
 
 class MigrationFailureTests(unittest.TestCase):
