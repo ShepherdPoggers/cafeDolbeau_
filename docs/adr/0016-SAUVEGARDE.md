@@ -9,7 +9,7 @@ Des sauvegardes de la base en production doivent pouvoir être exécutées et re
 
 
 ## Décision
-La sauvegarde et la restauration du site web sont deux opérations distinctes. Le script `infra/scripts/sauvegarder-postgres.py` crée une archive de la base de données. Au besoin, `infra/scripts/restaurer-postgres.py` restaure cette sauvegarde, puis `infra/scripts/lancer-restauration.py` démarre le site web avec les données restaurées.
+La sauvegarde et la restauration du site web sont deux opérations distinctes. Le script `sauvegarder-postgres.py` crée une archive de la base de données. Au besoin, `restaurer-postgres.py` restaure cette sauvegarde, puis `lancer-restauration.py` démarre le site web avec les données restaurées. Pour mettre les données en productions, il suffit d'utiliser le script `infra/scripts/transferer-postgres.py`
 
 
 ## Options écartées
